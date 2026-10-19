@@ -1,0 +1,23 @@
+{
+  "model": "Maia3-79M",
+  "Elo": 2600,
+  "SelfElo": 2600,
+  "OppoElo": 2600,
+  "nodes_per_move": 1,
+  "total": 81548,
+  "attempted": 81519,
+  "solved": 29297,
+  "failed": 52222,
+  "solve_rate": 0.3593886087905887,
+  "rating": 2151.9916951491873,
+  "rd": 1.450250560554674,
+  "rating_system": "Glicko-1",
+  "rating_scale": 400,
+  "starting_rating": 2000,
+  "is_final": false,
+  "published_shards": 64,
+  "complete_shards": 63,
+  "missing_shards": [],
+  "last_updated_utc": "2026-10-19T03:50:35.229268+00:00",
+  "source_run": "https://github.com/TanTzeHerng/chess.com-puzzles/actions/runs/39191728925"
+}
