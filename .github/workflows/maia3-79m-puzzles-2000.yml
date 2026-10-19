@@ -1,4 +1,4 @@
-name: Maia3-79M 2000+ preflight
+name: Maia3-79M one-node Chess.com 2000+ puzzle benchmark
 on:
   push:
     branches: [maia3-79m-puzzles-2000-20261019]
@@ -7,32 +7,132 @@ on:
       - 'maia3_benchmark/**'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
+concurrency:
+  group: maia3-79m-2000-puzzles
+  cancel-in-progress: false
 jobs:
-  preflight:
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 55
+    steps:
+      - name: Checkout benchmark source
+        uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install source-preparation dependencies
+        run: python -m pip install --quiet python-chess ijson
+      - name: Prepare Chess.com v2 2000+ puzzles and verify SHA-256
+        run: python maia3_benchmark/prepare.py
+      - name: Save immutable shuffled puzzle dataset
+        uses: actions/upload-artifact@v4
+        with:
+          name: maia3-puzzle-dataset
+          path: |
+            puzzles_2000plus.jsonl.gz
+            dataset_info.json
+          retention-days: 14
+          if-no-files-found: error
+      - name: Install CPU-only PyTorch
+        run: python -m pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Install Maia3 official UCI (no GPU needed)
+        run: |
+          python -m pip install --quiet numpy huggingface-hub
+          python -m pip install --quiet --no-deps 'git+https://github.com/CSSLab/maia3.git'
+      - name: Restore/cache official model checkpoint
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: maia3-79m-official-hf-v1
+      - name: Fetch Maia3-79M weights on remote runner
+        run: maia3-cache --model maia3-79m
+      - name: Smoke test actual 2600 Elo one-node inference
+        run: |
+          OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 python - <<'PY'
+          import chess, chess.engine, sys
+          e=chess.engine.SimpleEngine.popen_uci(
+            [sys.executable,'-m','maia3.uci','--model','maia3-79m',
+             '--elo','2600','--temperature','0','--device','cpu','--no-use-amp'],timeout=1200)
+          e.configure({'Elo':2600,'SelfElo':2600,'OppoElo':2600,'MultiPV':1,'Temperature':'0'})
+          board=chess.Board()
+          m=e.play(board,chess.engine.Limit(nodes=1),game=object()).move
+          assert m in board.legal_moves
+          print('MAIA3_MODEL_PREFLIGHT_SUCCESS',m.uci(),flush=True)
+          e.quit()
+          PY
+  solve:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
+    env:
+      MAIA_SHARDS: '64'
+      MAIA_SHARD: ${{ matrix.shard }}
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '1'
+      TOKENIZERS_PARALLELISM: 'false'
+    steps:
+      - name: Checkout remote worker
+        uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Get verified shared dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: maia3-puzzle-dataset
+          path: .
+      - name: Install CPU-only PyTorch
+        run: python -m pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Install official Maia3 UCI
+        run: |
+          python -m pip install --quiet python-chess numpy huggingface-hub
+          python -m pip install --quiet --no-deps 'git+https://github.com/CSSLab/maia3.git'
+      - name: Restore official checkpoint from GitHub cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: maia3-79m-official-hf-v1
+          fail-on-cache-miss: true
+      - name: Run one-node puzzles and publish live status
+        run: python maia3_benchmark/runner.py
+      - name: Preserve shard result
+        uses: actions/upload-artifact@v4
+        with:
+          name: maia3-result-${{ matrix.shard }}
+          path: result-part-*.jsonl.gz
+          retention-days: 14
+          if-no-files-found: error
+  aggregate:
+    needs: [prepare, solve]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install Maia3
-        run: |
-          python -m pip install --quiet 'git+https://github.com/CSSLab/maia3.git'
-      - name: Download 79M and test UCI one node
-        run: |
-          python -m maia3.cache --help || true
-          python - <<'PY'
-          import chess, chess.engine, sys, time
-          t=time.monotonic()
-          e=chess.engine.SimpleEngine.popen_uci([sys.executable, '-m', 'maia3.uci',
-              '--model','maia3-79m','--elo','2600',
-              '--temperature','0','--device','cpu','--no-use-amp'], timeout=900)
-          e.configure({'Elo':2600,'SelfElo':2600,'OppoElo':2600,'Temperature':'0','MultiPV':1})
-          b=chess.Board()
-          r=e.play(b,chess.engine.Limit(nodes=1),game=object(),info=chess.engine.INFO_ALL)
-          assert r.move in b.legal_moves, r
-          print('MAIA3_79M_ONE_NODE_OK',r.move.uci(),'seconds',time.monotonic()-t,flush=True)
-          e.quit()
-          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: maia3-puzzle-dataset
+          path: .
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: maia3-result-*
+          merge-multiple: true
+          path: .
+      - name: Replay Glicko from full ordered puzzle results
+        run: python maia3_benchmark/aggregate.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maia3-final-puzzles-2000
+          path: |
+            final_summary.json
+            maia3-79m-complete-results.jsonl.gz
+          retention-days: 14
