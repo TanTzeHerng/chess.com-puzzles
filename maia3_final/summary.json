@@ -1,0 +1,31 @@
+{
+  "state": "completed",
+  "model": "Maia3-79M",
+  "Elo": 2600,
+  "SelfElo": 2600,
+  "OppoElo": 2600,
+  "nodes_per_solver_move": 1,
+  "temperature": 0,
+  "top_p": 1,
+  "total": 81548,
+  "solved": 29312,
+  "failed": 52236,
+  "scoring": "full Chess.com recorded solution only",
+  "rating_system": "Glicko-1",
+  "rating_scale": 400,
+  "initial_rating": 2000,
+  "initial_rd": 350,
+  "puzzle_rd": 0,
+  "rd_inflation": 0,
+  "rating": 2152.0286020546528,
+  "rd": 1.449981115025214,
+  "dataset": {
+    "source_sha256": "e1723a55970e9dbf36b3a2981183b571b979efe5ee7a83a500f7526813d7f406",
+    "total": 81548,
+    "cutoff": 2000,
+    "shuffle_seed": "9509890422764783073",
+    "dataset_sha256": "a7c186fd3cc267ceb60085b76da2da1a1f97135a66eefdec8ba98062a123a428",
+    "rating_min": 2000,
+    "rating_max": 4410
+  }
+}
