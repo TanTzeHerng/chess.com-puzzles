@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Maia3-79M (1 node) | Live Puzzle Benchmark</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui,Segoe UI,Arial;background:#0c1424;color:#e6edf8}
+*{box-sizing:border-box}body{margin:0;padding:clamp(18px,4vw,45px)}main{max-width:1040px;margin:auto}
+h1{font-size:clamp(25px,3vw,36px);letter-spacing:-.7px;margin:8px 0}
+.small{color:#a3b5d0;font-size:14px;line-height:1.65}.top{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:center}
+.pill{font-size:13px;padding:8px 12px;background:#19344c;border:1px solid #3a6b82;border-radius:30px;color:#d4efff}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:25px 0 14px}
+.card{border:1px solid #293954;background:#121e30;border-radius:14px;padding:20px}
+.value{font-size:clamp(26px,3vw,36px);font-weight:750;letter-spacing:-.5px;margin:8px 0;font-variant-numeric:tabular-nums}
+.label{font-size:13px;color:#9db0ca}#rd{font-size:15px;color:#8dcfce}
+progress{width:100%;height:18px;accent-color:#60bece;border-radius:20px}
+.info{padding:12px 0;color:#a7bad4;line-height:1.5}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{border-bottom:1px solid #293954;text-align:left;padding:10px}
+th{color:#b2c4dd}a{color:#89d3ff}a:hover{text-decoration:none}
+.btn{border:1px solid #4b7790;color:#e5f5ff;background:#173752;padding:9px 15px;border-radius:9px;cursor:pointer;font:inherit}
+#error{color:#f8bb95;white-space:pre-wrap}#run{font-family:ui-monospace,Consolas,monospace}
+@media(max-width:540px){th:nth-child(3),td:nth-child(3){display:none}}
+</style></head><body><main>
+<div class="top"><div><div class="small">Chess.com 2000+ puzzle dataset · 81,548 positions · 64 GitHub runners</div>
+<h1>Maia3-79M <span class="small">(1 node)</span></h1><div class="small">Elo = SelfElo = OppoElo = 2600 · Glicko-1, original 400-point scale</div></div><div id="state" class="pill">Connecting…</div></div>
+<div class="grid">
+<div class="card"><div class="label">Completed puzzles</div><div class="value" id="attempts">—</div><div class="label" id="fraction">out of 81,548</div></div>
+<div class="card"><div class="label">Solved</div><div class="value" id="solved">—</div><div class="label" id="rate">Solve rate: —</div></div>
+<div class="card"><div class="label">Failed</div><div class="value" id="failed">—</div><div class="label">Strict full-line scoring</div></div>
+<div class="card"><div class="label">Provisional Glicko</div><div class="value" id="rating">—</div><div id="rd">RD: —</div></div>
+</div>
+<div class="card"><progress id="progress" value="0" max="81548"></progress>
+<div class="info" id="progressLabel">Reading 64 public checkpoints…</div>
+<div class="small">Rating is replayed in original dataset order using only verified completed records. It is provisional until all 81,548 puzzles finish. No neural-network inference runs in this browser.</div></div>
+<div class="grid" style="margin-top:14px"><div class="card"><div class="label">Publishing shards</div><div class="value" id="shards">— / 64</div></div>
+<div class="card"><div class="label">Last data refresh</div><div class="value" style="font-size:18px" id="updated">—</div><div class="label" id="next">Autorefresh every 60 seconds</div></div></div>
+<div class="card"><div class="top"><h2 style="font-size:17px;margin:0">Latest progress by worker</h2><button class="btn" onclick="refresh()">Refresh now</button></div>
+<div id="error" class="small"></div><div style="max-height:300px;overflow:auto"><table><thead><tr><th>Shard</th><th>Progress</th><th>Status</th></tr></thead><tbody id="workers"></tbody></table></div></div>
+<p class="small">Source: <a href="https://github.com/TanTzeHerng/chess.com-puzzles/actions/runs/39191728925" target="_blank" rel="noopener">GitHub Actions run</a>.
+Each worker commits checkpoint files to its own public branch. This dashboard fetches these files directly, avoiding a frozen local snapshot. If checkpoints stop changing, the source workers may be finished or paused.</p>
+</main><script>
+"use strict";
+const repo="TanTzeHerng/chess.com-puzzles", total=81548, N=64;
+const fmt=n=>Number(n).toLocaleString("en-US");
+const byId=id=>document.getElementById(id);
+let fetching=false, interval=60, lastUpdated=null;
+const raw=(branch,path)=>"https://raw.githubusercontent.com/"+repo+"/"+branch+"/"+path+"?nocache="+Date.now()+"-"+Math.random().toString(36).slice(2,7);
+function set(id,s){byId(id).textContent=s;}
+async function tryFetch(url,kind){const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);return kind==="json"?r.json():r.arrayBuffer();}
+async function pool(items,fn,parallel=8){let q=0,out=new Array(items.length);await Promise.all(Array.from({length:parallel},async()=>{while(q<items.length){let i=q++;try{out[i]=await fn(items[i])}catch(e){out[i]={error:String(e)}}}}));return out;}
+function calcRating(results){
+ results.sort((a,b)=>a.index-b.index);
+ let rating=2000,rd=350,last=-1,dup=0;
+ const q=Math.log(10)/400;let solved=0;
+ for(const z of results){
+  if(z.index===last){dup++;continue} last=z.index;
+  if(!Number.isFinite(z.rating)||typeof z.solved!=="boolean")throw Error("Invalid journal entry");
+  const e=1/(1+Math.pow(10,(z.rating-rating)/400));
+  const v=1/(1/(rd*rd)+q*q*e*(1-e));
+  rating+=q*v*((z.solved?1:0)-e);rd=Math.sqrt(v);if(z.solved)solved++;
+ }
+ return {rating,rd,solved,records:results.length-dup};
+}
+async function gunzip(buffer){
+ const stream=new Blob([buffer]).stream().pipeThrough(new DecompressionStream("gzip"));
+ return await new Response(stream).text();
+}
+async function refresh(){
+ if(fetching)return;fetching=true;set("state","Refreshing…");set("error","");
+ let problems=[];
+ try{
+  const ids=Array.from({length:N},(_,i)=>i);
+  const statuses=await pool(ids,async i=>{
+   const b="maia3-79m-puzzle2000-progress-"+String(i).padStart(2,"0");
+   const d=await tryFetch(raw(b,"maia3_live/status.json"),"json");
+   return {...d,shard:i};
+  },10);
+  let attempted=0,solved=0,seen=0,finished=0;
+  const rows=[];
+  for(let i=0;i<N;i++){let s=statuses[i];if(s.error){problems.push("Shard "+i+": "+s.error);rows.push({i,a:0,t:1275,state:"unavailable"});continue;}
+   seen++;attempted+=s.attempted||0;solved+=s.solved||0;if(s.state==="completed")finished++;
+   rows.push({i,a:s.attempted||0,t:s.total||1275,state:s.state||"unknown"});
+  }
+  set("attempts",fmt(attempted));set("solved",fmt(solved));
+  set("failed",fmt(attempted-solved));set("rate",attempted?"Solve rate: "+(100*solved/attempted).toFixed(2)+"%":"Solve rate: —");
+  set("shards",fmt(seen)+" / 64");byId("progress").value=attempted;
+  set("progressLabel",fmt(attempted)+" / "+fmt(total)+" ("+(attempted/total*100).toFixed(2)+"%) · "+finished+" completed shards");
+  byId("workers").innerHTML=rows.map(r=>"<tr><td>"+r.i+"</td><td>"+fmt(r.a)+" / "+fmt(r.t)+"</td><td>"+r.state+"</td></tr>").join("");
+  set("state",attempted===total?"Results complete":"Live · "+finished+"/64 workers completed");
+  const journal=await pool(ids,async i=>{
+   const b="maia3-79m-puzzle2000-progress-"+String(i).padStart(2,"0");
+   const z=await tryFetch(raw(b,"maia3_live/results.jsonl.gz"),"array");
+   const text=await gunzip(z);
+   const data=text.split("\n").filter(Boolean).map(x=>JSON.parse(x));
+   for(const row of data)if(row.index%N!==i)throw Error("Shard row index mismatch");
+   return {data};
+  },7);
+  const all=[];let shards=0;for(let i=0;i<N;i++){if(journal[i].data){all.push(...journal[i].data);shards++}else problems.push("Journal "+i+": "+journal[i].error);}
+  if(all.length){const g=calcRating(all);set("rating",g.rating.toFixed(2));set("rd","RD: "+g.rd.toFixed(2));
+   set("fraction","Glicko replay: "+fmt(g.records)+" confirmed rows");}
+  else{set("rating","—");set("rd","No journal available");}
+  lastUpdated=new Date();set("updated",lastUpdated.toLocaleTimeString());set("error",problems.length?problems.length+" sources currently unavailable. Partial results shown.":"All published shard files fetched.");
+ }catch(e){set("state","Connection issue");set("error","Refresh failed: "+e+" · Automatic retries remain enabled.");}
+ finally{fetching=false}
+}
+refresh();setInterval(refresh,interval*1000);
+</script></body></html>
