@@ -1,0 +1,38 @@
+name: Maia3-79M 2000+ preflight
+on:
+  push:
+    branches: [maia3-79m-puzzles-2000-20261019]
+    paths:
+      - '.github/workflows/maia3-79m-puzzles-2000.yml'
+      - 'maia3_benchmark/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Maia3
+        run: |
+          python -m pip install --quiet 'git+https://github.com/CSSLab/maia3.git'
+      - name: Download 79M and test UCI one node
+        run: |
+          python -m maia3.cache --help || true
+          python - <<'PY'
+          import chess, chess.engine, sys, time
+          t=time.monotonic()
+          e=chess.engine.SimpleEngine.popen_uci([sys.executable, '-m', 'maia3.uci',
+              '--model','maia3-79m','--elo','2600',
+              '--temperature','0','--device','cpu','--no-use-amp'], timeout=900)
+          e.configure({'Elo':2600,'SelfElo':2600,'OppoElo':2600,'Temperature':'0','MultiPV':1})
+          b=chess.Board()
+          r=e.play(b,chess.engine.Limit(nodes=1),game=object(),info=chess.engine.INFO_ALL)
+          assert r.move in b.legal_moves, r
+          print('MAIA3_79M_ONE_NODE_OK',r.move.uci(),'seconds',time.monotonic()-t,flush=True)
+          e.quit()
+          PY
