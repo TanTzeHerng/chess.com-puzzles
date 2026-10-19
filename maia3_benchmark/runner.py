@@ -45,10 +45,10 @@ def setup_branch():
 def start_engine():
     argv = [sys.executable, "-m", "maia3.uci", "--model", "maia3-79m",
             "--elo", "2600", "--temperature", "0", "--top-p", "1",
-            "--device", "cpu", "--no-use-amp"]
+            "--device", "cpu", "--no-use-amp", "--multipv", "1"]
     e = chess.engine.SimpleEngine.popen_uci(argv, timeout=1200)
     e.configure({"Elo": 2600, "SelfElo": 2600, "OppoElo": 2600,
-                 "Temperature": "0", "TopP": "1", "MultiPV": 1})
+                 "Temperature": "0", "TopP": "1"})
     return e
 
 

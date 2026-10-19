@@ -56,9 +56,9 @@ jobs:
           print('SMOKE: starting UCI handshake',flush=True)
           e=chess.engine.SimpleEngine.popen_uci(
             [sys.executable,'-m','maia3.uci','--model','maia3-79m',
-             '--elo','2600','--temperature','0','--device','cpu','--no-use-amp'],timeout=1200)
+             '--elo','2600','--temperature','0','--device','cpu','--no-use-amp','--multipv','1'],timeout=1200)
           print('SMOKE: uci handshake complete',round(time.monotonic()-t,2),flush=True)
-          e.configure({'Elo':2600,'SelfElo':2600,'OppoElo':2600,'MultiPV':1,'Temperature':'0'})
+          e.configure({'Elo':2600,'SelfElo':2600,'OppoElo':2600,'Temperature':'0'})
           print('SMOKE: options set',round(time.monotonic()-t,2),flush=True)
           board=chess.Board()
           m=e.play(board,chess.engine.Limit(nodes=1),game=object()).move
