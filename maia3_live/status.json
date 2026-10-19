@@ -1,0 +1,1 @@
+{"state":"loading","shard":63,"shards":64,"attempted":0,"total":1274,"solved":0,"failed":0,"model":"Maia3-79M","elo":2600,"self_elo":2600,"oppo_elo":2600,"nodes":1,"temperature":0,"rating_min":2000,"glicko_scale":400,"message":"Model startup","timestamp_utc":1792381317.1549747,"histogram":[],"recent":[]}
