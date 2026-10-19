@@ -1,0 +1,26 @@
+name: Maia3 live Glicko dashboard updater
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/maia3-live-glicko-dashboard.yml'
+  schedule:
+    - cron: '3,8,13,18,23,28,33,38,43,48,53,58 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: maia3-live-glicko-dashboard
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout dashboard aggregator
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - name: Update publicly visible Glicko score from remote puzzle journals
+        run: python -u maia3_live_dashboard/updater.py
