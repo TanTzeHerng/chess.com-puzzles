@@ -1,0 +1,79 @@
+name: Quick exact 47 twofold repetition cross-check
+# Revision: corrected Python import path for independent cloud workers.
+
+on:
+  push:
+    branches: [twofold-repetition-audit]
+    paths: [.github/workflows/twofold-47-fast.yml]
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [0, 1, 2, 3]
+    name: Rapid 47 recheck, group ${{ matrix.group }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore benchmark inputs and patch
+        shell: bash
+        run: |
+          printf '%s' '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' | base64 --decode | gzip --decompress > reanalyze_twofold.py
+          printf '%s' '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' | base64 --decode | gzip --decompress > flagged_40_positions.csv
+          printf '%s' 'H4sIAAAAAAAC/41TwW7bMAy96yu4S5fAVrK4W9EmW5HLdh4K9FQUhSzTjTZbMiS6XVD030fLrpc1RlHBgCGK74nvkSpMWYKU94ZALYPXy8YFQ8bZhW4ayI9CQko5kSmSJJnK3m5BrlZnWfoFkuG/3QoQcrmEK6TWW1BQePUIQTuPYErevzCAxwYVBXBWI6DylUEPeUsQyBtN1T7yqJI4TDsE7xyl4PwIpEfDyBzLjpvjisa8hZC5cxX8HC5br02463AUtzNjCZpqPwftbCB4Ys5YbiB5+S8NTk5eR752sA08i4Rr+/6nQW9qtKQq8G2Fa9YXkDkLcFq33mPUZosQK7tXNZvApvDXkqsVGR39WUS6q/GaAEp7F3pUYG/0LsoCVQXHNbeWFSZvKry5qdU+x7vWtgGL21t4p+QP3+BTpw+G7p6fpVnXXf6f9t1NgNfswZliHs0Q3T7S/9r0oGyVpRcMylan6ecIOlxPQsKrxYMxYyq4BDM/Pu3WUCz5FjdCHuewfT94BKwrMEyPRAp6h/o374dg7R64G2z1JNuBJV5xejeDXd96GLlI0beYxpleTEsL1Bx6/B6JyURJ17YYngKOg/cxxMFLOcxSYm0vz0MdlJW8edl/J8/iL6q8JKc2BAAA' | base64 --decode | gzip --decompress > stockfish_17_1_twofold.patch
+          python3 -m py_compile reanalyze_twofold.py
+          python3 reanalyze_twofold.py --dry-run > decisions_to_analyze.txt
+          head -n 3 decisions_to_analyze.txt
+      - name: Compile patched official Stockfish
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch sf_17.1 https://github.com/official-stockfish/Stockfish.git sf-17.1
+          cd sf-17.1
+          git apply --check ../stockfish_17_1_twofold.patch
+          git apply ../stockfish_17_1_twofold.patch
+          make -C src -j2 net
+          make -C src -j2 build ARCH=x86-64
+          ./src/stockfish <<'EOF'
+          uci
+          quit
+          EOF
+      - name: Verify automatic draw on second repetition
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from reanalyze_twofold import Engine
+          e=Engine('sf-17.1/src/stockfish',1,64)
+          try:
+            # After three plies, Black can return to the initial position.
+            r=e.search('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+                  ['g1f3','g8f6','f3g1'],3500,1,searchmove='f6g8')
+            s=r['lines'][0]
+            print('TWO-FOLD SMOKE TEST:',s,flush=True)
+            assert s['score_type']=='cp' and abs(s['score'])<=5,(s,r)
+          finally:e.close()
+          PY
+      - name: Install legal chess position library
+        run: python3 -m pip install --user 'chess==1.11.2'
+      - name: Validate exact original 47 puzzle decision points
+        run: python3 twofold-audit/audit_47.py --dry-run --group ${{ matrix.group }} --groups 4
+      - name: Reanalyze original flagged alternatives with twofold Stockfish
+        run: |
+          python3 twofold-audit/audit_47.py --engine sf-17.1/src/stockfish --out audit47_results.jsonl --group ${{ matrix.group }} --groups 4 --threads 2 --hashmb 192 --discover-ms 3500 --verify-ms 8000 --max-verify 2
+      - name: Upload auditable results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stockfish17-1-twofold-47-fast-group-${{ matrix.group }}
+          path: |
+            audit47_results.jsonl
+            twofold-audit/original_47_mate_recheck.csv
+            twofold-audit/recovered_seven.csv
+            twofold-audit/audit_47.py
+            flagged_40_positions.csv
+          if-no-files-found: warn
