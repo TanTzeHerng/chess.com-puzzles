@@ -1,4 +1,4 @@
-name: Stockfish 17.1 full 19492-puzzle clearly-winning WDL study
+name: Stockfish 17.1 full 19492-puzzle Lichess-gap study
 on:
   push:
     branches: [bench/stockfish171-node-thresholds-20261026]
@@ -33,7 +33,7 @@ jobs:
           printf 'uci\nquit\n' | "$SF" | grep 'id name Stockfish 17.1'
           curl -fL --retry 4 --connect-timeout 45 -o /tmp/puzzles-json.zip https://github.com/IchNukeDichWeg/chess.com-puzzles/releases/download/v2/puzzles-json.zip
           unzip -t /tmp/puzzles-json.zip | tail -3
-      - name: Smoke test WDL on actual Stockfish 17.1
+      - name: Smoke test Lichess winner-gap on Stockfish 17.1
         shell: bash
         run: |
           python - <<'PY'
@@ -41,12 +41,12 @@ jobs:
           sys.path.insert(0,'benchmarks/stockfish171_nodes')
           import run
           engine=chess.engine.SimpleEngine.popen_uci(open('/tmp/stockfish_path').read().strip())
-          engine.configure({'Threads':1,'Hash':64,'UCI_ShowWDL':True})
+          engine.configure({'Threads':1,'Hash':64})
           board=chess.Board('r1bqkbnr/pppppppp/2n5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2')
           ok,lines=run.verdict(engine,board,2048,'smoke','g1f3')
-          assert len(lines)==2 and all(v['wdl_wins_per_mille'] is not None for v in lines),lines
+          assert len(lines)==2 and all(v['lichess_win_chances'] is not None for v in lines),lines
           engine.quit()
-          print('WDL_SMOKE_PASS',lines)
+          print('LICHESS_GAP_SMOKE_PASS',lines)
           PY
       - name: Analyze shard ${{ matrix.shard }}
         shell: bash
@@ -66,7 +66,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sf171-wdl90-shard-${{ matrix.shard }}
+          name: sf171-lichess-gap-shard-${{ matrix.shard }}
           path: shard_results/
           if-no-files-found: warn
           retention-days: 30
@@ -80,9 +80,9 @@ jobs:
       - name: Download all completed shards
         uses: actions/download-artifact@v4
         with:
-          pattern: sf171-wdl90-shard-*
+          pattern: sf171-lichess-gap-shard-*
           path: shard_artifacts
-      - name: Aggregate verified WDL90 results and smooth without inventing missing values
+      - name: Aggregate Lichess-gap results and smooth without inventing missing values
         run: |
           python -m pip install --disable-pip-version-check numpy matplotlib
           python -u benchmarks/stockfish171_nodes/aggregate.py
@@ -90,7 +90,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sf171-19492-wdl90-summed-nodes-smoothed
+          name: sf171-19492-lichess-gap-summed-nodes-smoothed
           path: combined_results/
           if-no-files-found: warn
           retention-days: 30
