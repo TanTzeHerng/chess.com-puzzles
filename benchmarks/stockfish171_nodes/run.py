@@ -4,6 +4,7 @@ from pathlib import Path
 import chess,chess.engine
 
 TCN="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!?{~}(^)[_]@#$"
+WIN_WDL_PERMILLE=900  # Winning in at least 90% of Stockfish WDL-model selfplay games
 def decode(t):
     moves=[]
     for i in range(0,len(t),2):
@@ -47,14 +48,19 @@ def verdict(eng,board,budget,game,expected):
     for x in info:
         score=x.get("score")
         val=score.pov(board.turn).score(mate_score=100000) if score else None
+        wdl=x.get("wdl")
+        wins=wdl.pov(board.turn).wins if wdl is not None else None
         pv=x.get("pv") or []
-        lines.append({"move":pv[0].uci() if pv else None,"score":val,"nodes":x.get("nodes"),
-                     "depth":x.get("depth"),"bound":bool(x.get("lowerbound") or x.get("upperbound"))})
+        lines.append({"move":pv[0].uci() if pv else None,"score":val,"wdl_wins_per_mille":wins,
+                      "nodes":x.get("nodes"),"depth":x.get("depth"),
+                      "bound":bool(x.get("lowerbound") or x.get("upperbound"))})
     lines.sort(key=lambda x: x["score"] if x["score"] is not None else -10**9,reverse=True)
-    ok=(bool(lines) and lines[0]["move"]==expected and
-        lines[0]["score"] is not None and lines[0]["score"]>=100 and
-        (board.legal_moves.count()==1 or (len(lines)>1 and
-        lines[1]["score"] is not None and lines[1]["score"]<100)))
+    def clearly_winning(x):
+        return x["wdl_wins_per_mille"] is not None and x["wdl_wins_per_mille"]>=WIN_WDL_PERMILLE and not x["bound"]
+    def clearly_not_winning(x):
+        return x["wdl_wins_per_mille"] is not None and x["wdl_wins_per_mille"]<WIN_WDL_PERMILLE and not x["bound"]
+    ok=(bool(lines) and lines[0]["move"]==expected and clearly_winning(lines[0]) and
+        (board.legal_moves.count()==1 or (len(lines)>1 and clearly_not_winning(lines[1]))))
     return bool(ok),lines
 
 def main():
@@ -86,13 +92,13 @@ def main():
     if a.shard_count>1:
         assert 0<=a.shard_index<a.shard_count
         allrows=[r for i,r in enumerate(allrows) if i%a.shard_count==a.shard_index]
-    print("DATASET_COUNT",len(allrows),"BUDGETS",budgets,"SHARD",a.shard_index,"/",a.shard_count, "WIN_PROBABILITY_PROXY_CP",100,flush=True)
+    print("DATASET_COUNT",len(allrows),"BUDGETS",budgets,"SHARD",a.shard_index,"/",a.shard_count, "WIN_PROBABILITY_WDL_PERMILLE",WIN_WDL_PERMILLE,flush=True)
     results=[];started=time.monotonic()
     engine=chess.engine.SimpleEngine.popen_uci(a.engine,timeout=180)
     print("ENGINE_ID",engine.id,flush=True)
     if "17.1" not in engine.id.get("name",""):
         raise RuntimeError("This is NOT Stockfish 17.1")
-    engine.configure({"Threads":1,"Hash":64,"UCI_LimitStrength":False})
+    engine.configure({"Threads":1,"Hash":64,"UCI_LimitStrength":False,"UCI_ShowWDL":True})
     journal=out/"details.jsonl";seen=set()
     if journal.exists():
         for line in journal.read_text().splitlines():
@@ -110,7 +116,7 @@ def main():
             result={"id":r["id"],"rating":r["rating"],"fen":r["fen"],"moves":[],"total":None,"status":"unresolved"}
             for brd,u in positions:result["moves"].append({"uci":u,"results":{},"threshold":None})
             for b in budgets:
-                key=f'{r["id"]}:{b}'
+                key=str(r["id"])  # Keep TT throughout every budget and solver move in this puzzle
                 for j,(brd,u) in enumerate(positions):
                     try:ok,lines=verdict(engine,brd,b,key,u)
                     except Exception as ex:
@@ -140,7 +146,7 @@ def main():
             w.writerow([r["id"],r["rating"],len(r["moves"]),r["total"],
                 ";".join(str(m["threshold"] or "") for m in r["moves"]),r["status"]])
     print("RUN_SUMMARY",json.dumps({"completed":len(results),"stable":sum(r["total"] is not None for r in results),
-       "censored":sum(r["total"] is None for r in results),"budgets":budgets}),flush=True)
+       "censored":sum(r["total"] is None for r in results),"budgets":budgets,"winning_wdl_permille":WIN_WDL_PERMILLE}),flush=True)
     try:
         import numpy as np,matplotlib
         matplotlib.use("Agg")
