@@ -4,7 +4,23 @@ from pathlib import Path
 import chess,chess.engine
 
 TCN="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!?{~}(^)[_]@#$"
-WIN_WDL_PERMILLE=900  # Winning in at least 90% of Stockfish WDL-model selfplay games
+LICHESS_WIN_CHANCES_GAP=0.7
+LICHESS_MIN_ADVANTAGE_CP=200
+# Lichess puzzle generator v50: https://github.com/ornicar/lichess-puzzler/blob/master/generator
+# win_chances range [-1,1], so 0.7 corresponds to 35 percentage points
+import math
+
+def lichess_win_chances(score):
+    if score is None: return None
+    mate=score.mate()
+    if mate is not None: return 1.0 if mate>0 else -1.0
+    cp=score.score()
+    if cp is None: return None
+    z=-0.00368208*cp
+    # logistic expressed stably at extreme scores
+    if z>700:return -1.0
+    if z<-700:return 1.0
+    return 2.0/(1.0+math.exp(z))-1.0
 def decode(t):
     moves=[]
     for i in range(0,len(t),2):
@@ -40,27 +56,52 @@ def get_input(p):
         except Exception as e:
             print("BAD_SOURCE",x.get("id"),repr(e),flush=True)
 
-def verdict(eng,board,budget,game,expected):
+def verdict(eng,board,budget,game,expected,final_solver_move=False):
+    # Match published Lichess generator's chance-gap test for non-final moves.
+    # Chess.com exempts the last solver move from uniqueness (but not from winning).
     info=eng.analyse(board,chess.engine.Limit(nodes=budget),multipv=min(2,board.legal_moves.count()),game=game,
                      info=chess.engine.INFO_SCORE|chess.engine.INFO_PV|chess.engine.INFO_BASIC)
     if isinstance(info,dict):info=[info]
     lines=[]
     for x in info:
         score=x.get("score")
-        val=score.pov(board.turn).score(mate_score=100000) if score else None
-        wdl=x.get("wdl")
-        wins=wdl.pov(board.turn).wins if wdl is not None else None
+        viewpoint=score.pov(board.turn) if score is not None else None
+        val=viewpoint.score(mate_score=100000) if viewpoint is not None else None
         pv=x.get("pv") or []
-        lines.append({"move":pv[0].uci() if pv else None,"score":val,"wdl_wins_per_mille":wins,
+        lines.append({"move":pv[0].uci() if pv else None,"score":val,
+                      "cp":viewpoint.score() if viewpoint is not None else None,
+                      "mate":viewpoint.mate() if viewpoint is not None else None,
+                      "lichess_win_chances":lichess_win_chances(viewpoint),
                       "nodes":x.get("nodes"),"depth":x.get("depth"),
                       "bound":bool(x.get("lowerbound") or x.get("upperbound"))})
     lines.sort(key=lambda x: x["score"] if x["score"] is not None else -10**9,reverse=True)
-    def clearly_winning(x):
-        return x["wdl_wins_per_mille"] is not None and x["wdl_wins_per_mille"]>=WIN_WDL_PERMILLE and not x["bound"]
-    def clearly_not_winning(x):
-        return x["wdl_wins_per_mille"] is not None and x["wdl_wins_per_mille"]<WIN_WDL_PERMILLE and not x["bound"]
-    ok=(bool(lines) and lines[0]["move"]==expected and clearly_winning(lines[0]) and
-        (board.legal_moves.count()==1 or (len(lines)>1 and clearly_not_winning(lines[1]))))
+    def reliable(x):
+        return x["move"] is not None and x["score"] is not None and not x["bound"]
+    def winning(x):
+        return x["mate"] is not None and x["mate"]>0 or x["cp"] is not None and x["cp"]>=LICHESS_MIN_ADVANTAGE_CP
+    top=lines[0] if lines else None
+    second=lines[1] if len(lines)>1 else None
+    expected_top=top is not None and top["move"]==expected and reliable(top)
+    if not expected_top or not winning(top):
+        ok=False
+    elif final_solver_move or board.legal_moves.count()==1:
+        ok=True
+    elif second is None or not reliable(second):
+        ok=False
+    elif top["mate"]==1 and second["mate"]==1:
+        # Simplified Lichess mate-in-one exception. This accepts multiple immediate mates.
+        ok=True
+    elif top["mate"]==1:
+        ok=second["mate"]!=1 and second["lichess_win_chances"]<=0.6
+    else:
+        ok=(top["lichess_win_chances"] is not None and second["lichess_win_chances"] is not None
+            and top["lichess_win_chances"]>second["lichess_win_chances"]+LICHESS_WIN_CHANCES_GAP)
+    if top is not None:
+        top["gap_vs_second"]=(
+            top["lichess_win_chances"]-second["lichess_win_chances"]
+            if second is not None and top["lichess_win_chances"] is not None
+            and second["lichess_win_chances"] is not None else None)
+        top["final_move_exempt_from_uniqueness"]=final_solver_move
     return bool(ok),lines
 
 def main():
@@ -92,13 +133,13 @@ def main():
     if a.shard_count>1:
         assert 0<=a.shard_index<a.shard_count
         allrows=[r for i,r in enumerate(allrows) if i%a.shard_count==a.shard_index]
-    print("DATASET_COUNT",len(allrows),"BUDGETS",budgets,"SHARD",a.shard_index,"/",a.shard_count, "WIN_PROBABILITY_WDL_PERMILLE",WIN_WDL_PERMILLE,flush=True)
+    print("DATASET_COUNT",len(allrows),"BUDGETS",budgets,"SHARD",a.shard_index,"/",a.shard_count, "LICHESS_WIN_CHANCE_GAP",LICHESS_WIN_CHANCES_GAP,"LICHESS_MIN_CP",LICHESS_MIN_ADVANTAGE_CP,flush=True)
     results=[];started=time.monotonic()
     engine=chess.engine.SimpleEngine.popen_uci(a.engine,timeout=180)
     print("ENGINE_ID",engine.id,flush=True)
     if "17.1" not in engine.id.get("name",""):
         raise RuntimeError("This is NOT Stockfish 17.1")
-    engine.configure({"Threads":1,"Hash":64,"UCI_LimitStrength":False,"UCI_ShowWDL":True})
+    engine.configure({"Threads":1,"Hash":64,"UCI_LimitStrength":False})
     journal=out/"details.jsonl";seen=set()
     if journal.exists():
         for line in journal.read_text().splitlines():
@@ -118,7 +159,7 @@ def main():
             for b in budgets:
                 key=str(r["id"])  # Keep TT throughout every budget and solver move in this puzzle
                 for j,(brd,u) in enumerate(positions):
-                    try:ok,lines=verdict(engine,brd,b,key,u)
+                    try:ok,lines=verdict(engine,brd,b,key,u,final_solver_move=(j==len(positions)-1))
                     except Exception as ex:
                         ok=None;lines=[];print("ENGINE_ERROR",r["id"],b,str(ex),flush=True)
                     result["moves"][j]["results"][str(b)]={"ok":ok,"lines":lines}
@@ -146,7 +187,7 @@ def main():
             w.writerow([r["id"],r["rating"],len(r["moves"]),r["total"],
                 ";".join(str(m["threshold"] or "") for m in r["moves"]),r["status"]])
     print("RUN_SUMMARY",json.dumps({"completed":len(results),"stable":sum(r["total"] is not None for r in results),
-       "censored":sum(r["total"] is None for r in results),"budgets":budgets,"winning_wdl_permille":WIN_WDL_PERMILLE}),flush=True)
+       "censored":sum(r["total"] is None for r in results),"budgets":budgets,"lichess_win_chance_gap":LICHESS_WIN_CHANCES_GAP,"lichess_min_cp":LICHESS_MIN_ADVANTAGE_CP,"last_move_exception":"chesscom"}),flush=True)
     try:
         import numpy as np,matplotlib
         matplotlib.use("Agg")
