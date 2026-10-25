@@ -1,4 +1,5 @@
 name: Final exact 47 twofold repetition chess audit
+# Revision: corrected Python import path for independent cloud workers.
 
 on:
   push:
