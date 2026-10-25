@@ -1,0 +1,81 @@
+name: Stockfish 17.1 full 19492-puzzle rating-node study
+on:
+  push:
+    branches: [bench/stockfish171-node-thresholds-20261026]
+    paths: [.github/workflows/sf171-full-19492.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install analysis requirements
+        run: python -m pip install --disable-pip-version-check chess numpy matplotlib
+      - name: Fetch official unmodified Stockfish 17.1 and original rated-puzzle archive
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 4 --connect-timeout 45 -o /tmp/sf171.tar https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-ubuntu-x86-64-sse41-popcnt.tar
+          mkdir sf171
+          tar -xf /tmp/sf171.tar -C sf171
+          SF="$(find "$PWD/sf171" -type f -name 'stockfish-ubuntu-x86-64-sse41-popcnt' | head -1)"
+          test -n "$SF"
+          chmod +x "$SF"
+          printf '%s\n' "$SF" > /tmp/stockfish_path
+          printf 'uci\nquit\n' | "$SF" | grep 'id name Stockfish 17.1'
+          curl -fL --retry 4 --connect-timeout 45 -o /tmp/puzzles-json.zip https://github.com/IchNukeDichWeg/chess.com-puzzles/releases/download/v2/puzzles-json.zip
+          unzip -t /tmp/puzzles-json.zip | tail -3
+      - name: Analyze shard ${{ matrix.shard }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u benchmarks/stockfish171_nodes/run.py \
+            --dataset /tmp/puzzles-json.zip \
+            --engine "$(cat /tmp/stockfish_path)" \
+            --output shard_results \
+            --pilot 0 \
+            --shard-count 16 \
+            --shard-index ${{ matrix.shard }} \
+            --budgets 512,1024,2048,4096,8192,16384,32768,65536,131072,262144 \
+            --confirm 3 \
+            --seconds 10000
+      - name: Upload per-puzzle audit trail for shard ${{ matrix.shard }}
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sf171-shard-${{ matrix.shard }}
+          path: shard_results/
+          if-no-files-found: warn
+          retention-days: 30
+  aggregate:
+    if: always()
+    needs: benchmark
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all completed shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sf171-shard-*
+          path: shard_artifacts
+      - name: Aggregate and smooth without inventing missing values
+        run: |
+          python -m pip install --disable-pip-version-check numpy matplotlib
+          python -u benchmarks/stockfish171_nodes/aggregate.py
+      - name: Upload full study combined graph and data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sf171-19492-summed-nodes-smoothed
+          path: combined_results/
+          if-no-files-found: warn
+          retention-days: 30
