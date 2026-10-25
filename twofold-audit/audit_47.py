@@ -3,6 +3,7 @@
 import argparse, csv, json, sys, time, traceback
 from pathlib import Path
 import chess
+sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
 from reanalyze_twofold import Engine, class_label, append_jsonl, utcnow
 
 P=Path(__file__).resolve().parent
