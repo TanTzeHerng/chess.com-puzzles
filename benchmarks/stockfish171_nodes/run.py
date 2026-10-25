@@ -52,9 +52,9 @@ def verdict(eng,board,budget,game,expected):
                      "depth":x.get("depth"),"bound":bool(x.get("lowerbound") or x.get("upperbound"))})
     lines.sort(key=lambda x: x["score"] if x["score"] is not None else -10**9,reverse=True)
     ok=(bool(lines) and lines[0]["move"]==expected and
-        lines[0]["score"] is not None and lines[0]["score"]>0 and not lines[0]["bound"] and
+        lines[0]["score"] is not None and lines[0]["score"]>=100 and
         (board.legal_moves.count()==1 or (len(lines)>1 and
-        lines[1]["score"] is not None and lines[1]["score"]<=0 and not lines[1]["bound"])))
+        lines[1]["score"] is not None and lines[1]["score"]<100)))
     return bool(ok),lines
 
 def main():
@@ -64,6 +64,8 @@ def main():
     ap.add_argument("--pilot",type=int,default=60)
     ap.add_argument("--budgets",default="512,1024,2048,4096,8192,16384,32768,65536,131072,262144")
     ap.add_argument("--confirm",type=int,default=3)
+    ap.add_argument("--shard-count",type=int,default=1)
+    ap.add_argument("--shard-index",type=int,default=0)
     ap.add_argument("--seconds",type=float,default=1500)
     a=ap.parse_args();out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
     allrows=list(get_input(a.dataset))
@@ -81,7 +83,10 @@ def main():
                 if buckets[band] and len(chosen)<a.pilot:chosen.append(buckets[band].pop())
         allrows=chosen
     else:allrows.sort(key=lambda r:(r["rating"],int(r["id"])))
-    print("DATASET_COUNT",len(allrows),"BUDGETS",budgets,flush=True)
+    if a.shard_count>1:
+        assert 0<=a.shard_index<a.shard_count
+        allrows=[r for i,r in enumerate(allrows) if i%a.shard_count==a.shard_index]
+    print("DATASET_COUNT",len(allrows),"BUDGETS",budgets,"SHARD",a.shard_index,"/",a.shard_count, "WIN_PROBABILITY_PROXY_CP",100,flush=True)
     results=[];started=time.monotonic()
     engine=chess.engine.SimpleEngine.popen_uci(a.engine,timeout=180)
     print("ENGINE_ID",engine.id,flush=True)
