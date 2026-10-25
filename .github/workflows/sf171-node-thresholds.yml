@@ -1,0 +1,58 @@
+name: Stockfish 17.1 2500+ puzzle node thresholds
+on:
+  push:
+    branches:
+      - bench/stockfish171-node-thresholds-20261026
+    paths:
+      - ".github/workflows/sf171-node-thresholds.yml"
+      - "benchmarks/stockfish171_nodes/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare Python packages
+        run: python -m pip install --disable-pip-version-check chess numpy matplotlib
+      - name: Download unmodified official Stockfish 17.1 Linux release with NNUE
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 3 --connect-timeout 30 -o /tmp/sf171.tar https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-ubuntu-x86-64-sse41-popcnt.tar
+          mkdir -p sf171
+          tar -xf /tmp/sf171.tar -C sf171
+          find sf171 -maxdepth 4 -type f | head -30
+          SF="$(find "$PWD/sf171" -type f -name 'stockfish-ubuntu-x86-64-sse41-popcnt' | head -1)"
+          test -n "$SF"
+          chmod +x "$SF"
+          printf '%s\n' "$SF" > /tmp/stockfish_path
+          printf 'uci\nquit\n' | "$SF" | grep -E '(Stockfish 17.1|id name|EvalFile)' | head -8
+      - name: Download September 2026 Chess.com source snapshot
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 3 --connect-timeout 30 -o /tmp/puzzles-json.zip https://github.com/IchNukeDichWeg/chess.com-puzzles/releases/download/v2/puzzles-json.zip
+          unzip -l /tmp/puzzles-json.zip | head -15
+      - name: Benchmark pilot; never touch the user's PC
+        shell: bash
+        run: |
+          set -euo pipefail
+          SF="$(cat /tmp/stockfish_path)"
+          python -u benchmarks/stockfish171_nodes/run.py \
+            --dataset /tmp/puzzles-json.zip \
+            --engine "$SF" \
+            --output sf171_results \
+            --pilot 60 \
+            --seconds 1800 \
+            --budgets 512,1024,2048,4096,8192,16384,32768,65536,131072,262144 \
+            --confirm 3
+      - name: Upload detailed results and smoothed graph
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sf171-2500plus-node-thresholds-pilot
+          path: sf171_results/
+          retention-days: 30
