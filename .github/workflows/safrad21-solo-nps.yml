@@ -1,0 +1,40 @@
+name: Safrad 2.1 single-worker Windows NPS test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'safrad_benchmark/solo_nps.py'
+      - '.github/workflows/safrad21-solo-nps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  solo:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Checkout test
+        uses: actions/checkout@v4
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install CPU measurement dependencies
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check requests psutil
+      - name: Measure one Safrad engine for 600 seconds
+        shell: pwsh
+        run: python -u safrad_benchmark/solo_nps.py
+      - name: Preserve NPS measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safrad-single-worker-nps
+          path: safrad_benchmark/nps/solo-windows-latest.json
+          if-no-files-found: warn
