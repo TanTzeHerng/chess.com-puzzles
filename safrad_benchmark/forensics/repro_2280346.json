@@ -1,0 +1,19 @@
+{
+  "puzzle_id": 2280346,
+  "engine": "Safrad 2.1.35.210",
+  "engine_sha256_expected": "205556a25d8f201c642102e026c4dc778204b51aa29292ebd623faf9bd2d8d74",
+  "test_position_fen": "7r/3n1ppp/3Qpk2/4qb2/8/3B4/P5PP/5R1K w - - 5 33",
+  "reference_bestmove": "f1f5",
+  "observed_in_benchmark": "d6c6",
+  "benchmark_observed_nodes": 18,
+  "benchmark_observed_mate": 1,
+  "runner_id": "40324721296",
+  "started_utc": "2026-10-26T12:44:54.324916+00:00",
+  "tests": [],
+  "independent_legality_check": {
+    "after_d6c6_check": false,
+    "after_d6c6_checkmate": false,
+    "legal_replies": 36,
+    "after_d6c6_fen": "7r/3n1ppp/2Q1pk2/4qb2/8/3B4/P5PP/5R1K b - - 6 33"
+  }
+}
