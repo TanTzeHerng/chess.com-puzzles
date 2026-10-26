@@ -1,0 +1,50 @@
+name: Compare free Safrad single-worker GitHub runners
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'safrad_benchmark/compare_free_runners.py'
+      - '.github/workflows/safrad21-compare-free-nps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: windows-2022
+          - label: windows-2025
+          - label: windows-2025-vs2026
+          - label: windows-11-arm
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 16
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SAFRAD_COMPARISON_RUNNER: ${{ matrix.label }}
+      SAFRAD_COMPARISON_SECONDS: '120'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Checkout experiment
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencies
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check requests psutil
+      - name: Test exact Safrad binary in one process
+        shell: pwsh
+        run: python -u safrad_benchmark/compare_free_runners.py
+      - name: Archive report, including any error
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safrad-free-nps-${{ matrix.label }}
+          path: safrad_benchmark/nps/compare-${{ matrix.label }}.json
+          if-no-files-found: ignore
