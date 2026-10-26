@@ -1,0 +1,51 @@
+name: Safrad 2.1 - Chess.com 2500+ Puzzle Benchmark
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'safrad_benchmark/runner.py'
+      - '.github/workflows/safrad21-puzzles.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '27 * * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  safrad:
+    runs-on: windows-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    concurrency:
+      group: safrad21-2500plus-${{ matrix.shard }}
+      cancel-in-progress: false
+    env:
+      SAFRAD_SHARD: ${{ matrix.shard }}
+      SAFRAD_SHARDS: '4'
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Checkout scripts
+        uses: actions/checkout@v4
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install chess and monitoring dependencies
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check chess psutil requests
+      - name: Search puzzles and continuously publish analysis progress
+        shell: pwsh
+        run: python -u safrad_benchmark/runner.py
+      - name: Preserve local fallback checkpoint on any failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safrad21-last-state-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: safrad_benchmark/download/shard-*-last-local.json
+          if-no-files-found: ignore
