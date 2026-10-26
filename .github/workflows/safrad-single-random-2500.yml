@@ -10,6 +10,7 @@ on:
     - cron: '17 */5 * * *'
 permissions:
   contents: write
+  actions: write
 concurrency:
   group: safrad-single-random-2500
   cancel-in-progress: false
@@ -45,3 +46,28 @@ jobs:
           name: safrad-single-random-${{ github.run_id }}
           path: safrad_benchmark/download/safrad-single-random-last-local.json
           if-no-files-found: ignore
+      - name: Queue next benchmark batch when there are more puzzles
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+          path = pathlib.Path("safrad_benchmark/download/safrad-single-random-last-local.json")
+          if not path.is_file():
+              raise RuntimeError("Local checkpoint missing; refusing unverified dispatch")
+          state = json.loads(path.read_text(encoding="utf-8"))
+          status = state.get("status")
+          remaining = state.get("remaining_count", 0)
+          if status == "awaiting_next_scheduled_run" and remaining > 0:
+              cmd = ["gh", "workflow", "run", "safrad-single-random-2500.yml",
+                     "--repo", os.environ["GITHUB_REPOSITORY"], "--ref", "main"]
+              subprocess.run(cmd, check=True)
+              print("NEXT_BATCH_QUEUED", "remaining", remaining, flush=True)
+          else:
+              print("NO_DISPATCH", status, remaining, flush=True)
+          PY
