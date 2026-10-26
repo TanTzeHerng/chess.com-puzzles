@@ -1,0 +1,46 @@
+name: Stop Safrad puzzle benchmark (retain solo NPS test)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/safrad-stop-puzzle-benchmark.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  stop_puzzles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Cancel active and queued 4-runner puzzle searches
+        shell: bash
+        run: |
+          set -u
+          REPO="$GITHUB_REPOSITORY"
+          # The one-worker NPS run 40292665220 is deliberately NOT touched.
+          for ID in 40288576604 40289139519; do
+            echo "Cancel puzzle run $ID"
+            gh run cancel "$ID" -R "$REPO" || true
+          done
+          for ID in 40288576604 40289139519; do
+            echo "Force-cancel puzzle run $ID"
+            gh api -X POST "repos/$REPO/actions/runs/$ID/force-cancel" || true
+          done
+      - name: Prevent the hourly puzzle schedule from resuming
+        shell: bash
+        run: |
+          gh workflow disable 'safrad21-puzzles.yml' -R "$GITHUB_REPOSITORY"
+      - name: Confirm cancellation without disturbing solo measurement
+        shell: bash
+        run: |
+          REPO="$GITHUB_REPOSITORY"
+          for ID in 40288576604 40289139519; do
+            gh run view "$ID" -R "$REPO" --json status,conclusion,url
+          done
+          gh run view 40292665220 -R "$REPO" --json status,conclusion,url
