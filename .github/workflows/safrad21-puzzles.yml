@@ -12,9 +12,22 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
+  preempt_stalled:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Cancel superseded calibration and queued jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh run cancel 40283844941 -R "$GITHUB_REPOSITORY" || true
+          gh run cancel 40285897699 -R "$GITHUB_REPOSITORY" || true
   safrad:
+    needs: preempt_stalled
     runs-on: windows-latest
     timeout-minutes: 330
     strategy:
@@ -22,8 +35,8 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3]
     concurrency:
-      group: safrad21-2500plus-${{ matrix.shard }}
-      cancel-in-progress: true
+      group: safrad21-rapid-2500plus-${{ matrix.shard }}
+      cancel-in-progress: false
     env:
       SAFRAD_SHARD: ${{ matrix.shard }}
       SAFRAD_SHARDS: '4'
