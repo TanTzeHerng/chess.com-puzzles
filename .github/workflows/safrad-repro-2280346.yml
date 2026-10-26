@@ -1,0 +1,46 @@
+name: Reproduce Safrad false mate-in-one puzzle 2280346
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/safrad-repro-2280346.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: safrad-repro-2280346
+  cancel-in-progress: false
+jobs:
+  isolated-reproduction:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      WINEPREFIX: /home/runner/.safrad-2280346-reproduction
+      WINEDEBUG: '-all'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Wine for original unmodified Safrad engine
+        shell: bash
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends wine wine64 wine32:i386
+          wineboot -u
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install legality checker
+        run: python -m pip install --disable-pip-version-check chess requests
+      - name: Run 24 isolated false mate reproduction trials
+        run: python -u safrad_benchmark/repro_2280346.py
+      - name: Preserve full JSON report even if upstream publishing fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safrad-false-mate-reproduction-${{ github.run_id }}
+          path: safrad_benchmark/forensics/repro_2280346.json
+          if-no-files-found: ignore
