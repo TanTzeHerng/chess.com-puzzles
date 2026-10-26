@@ -1,0 +1,45 @@
+name: Safrad host-only CPU optimization
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'safrad_benchmark/host_nps_optimize.py'
+      - '.github/workflows/safrad21-host-nps-optimize.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  optimize:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [priority-affinity, power-timer, repeat-reference]
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 25
+    env:
+      SAFRAD_HOST_TEST_MODE: ${{ matrix.mode }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Checkout benchmark
+        uses: actions/checkout@v4
+      - name: Install Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencies
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check psutil requests
+      - name: Benchmark host parameters (no Safrad options changed)
+        shell: pwsh
+        run: python -u safrad_benchmark/host_nps_optimize.py
+      - name: Preserve each trial series
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safrad-host-nps-${{ matrix.mode }}
+          path: safrad_benchmark/nps/host-opt-${{ matrix.mode }}.json
+          if-no-files-found: warn
