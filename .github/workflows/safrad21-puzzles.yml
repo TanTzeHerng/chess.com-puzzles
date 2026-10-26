@@ -28,6 +28,8 @@ jobs:
           gh run cancel 40285897699 -R "$GITHUB_REPOSITORY" || true
           # The previous workers use the old bugged grader; resume from its saved checkpoints.
           gh run cancel 40286214772 -R "$GITHUB_REPOSITORY" || true
+          # GitHub may leave Windows post-checkout jobs in progress after normal cancel.
+          gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/40286214772/force-cancel" || true
   safrad:
     needs: preempt_stalled
     runs-on: windows-latest
