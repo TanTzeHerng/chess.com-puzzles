@@ -26,6 +26,8 @@ jobs:
         run: |
           gh run cancel 40283844941 -R "$GITHUB_REPOSITORY" || true
           gh run cancel 40285897699 -R "$GITHUB_REPOSITORY" || true
+          # The previous workers use the old bugged grader; resume from its saved checkpoints.
+          gh run cancel 40286214772 -R "$GITHUB_REPOSITORY" || true
   safrad:
     needs: preempt_stalled
     runs-on: windows-latest

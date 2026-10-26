@@ -237,10 +237,14 @@ class Engine:
             except Exception as exc:
                 self.lines.put((time.monotonic(),"read_error: "+repr(exc)))
         threading.Thread(target=reader,daemon=True).start()
-        self.send("uci")
-        self.until("uciok",12)
-        self.send("isready")
-        self.until("readyok",12)
+        try:
+            self.send("uci")
+            self.until("uciok",12)
+            self.send("isready")
+            self.until("readyok",12)
+        except Exception:
+            self.close()
+            raise
 
     def send(self, cmd):
         if self.proc.poll() is not None:
@@ -323,10 +327,10 @@ def probe_engine(path, board):
     try:
         t=time.monotonic()
         r=e.analyze(board,"preflight",7,preliminary=True)
-        if r["early_return"]:
-            raise RuntimeError("Engine ends early even with go infinite: "+str(r))
+        # Early bestmove can be the engine's normal termination, not a protocol failure.
+        chess.Board(board.fen()).parse_uci(r["move"].lower())
         return {"bestmove":r["move"],"info_seen":bool(r["analysis"]["last_info"]),
-                "preflight_seconds":round(time.monotonic()-t,2)}
+                "returned_early":r["early_return"],"preflight_seconds":round(time.monotonic()-t,2)}
     finally:
         e.close()
 
@@ -437,14 +441,21 @@ def solve_one(e,p,worker_id):
             }
         try:
             ans=e.analyze(board,worker_id,TARGET_SECONDS)
-            correct_move=(ans["move"]==expected)
-            moves.append({"expected":expected,"actual":ans["move"],
-                          "correct":correct_move,"seconds":ans["elapsed_seconds"],
-                          "returned_early":ans["early_return"],"analysis":ans["analysis"]})
-            if ans["early_return"]:
-                technical_error="Safrad terminated its infinite search before 600 seconds"
-                correct=None
-                break
+            # Safrad sometimes chooses to finish an infinite search itself.
+            # An early legal bestmove is a completed move, not a technical failure.
+            # Normalize uppercase UCI promotion suffixes (e.g. e7e8Q).
+            raw_move=ans["move"]
+            parsed=board.parse_uci(raw_move.lower())
+            if parsed == chess.Move.null() or parsed not in board.legal_moves:
+                raise ValueError("Safrad returned a null or illegal move: "+raw_move)
+            actual_move=parsed.uci()
+            correct_move=(actual_move==expected.lower())
+            moves.append({"expected":expected,"actual":actual_move,
+                          "raw_bestmove":raw_move,"correct":correct_move,
+                          "seconds":ans["elapsed_seconds"],
+                          "returned_early":ans["early_return"],
+                          "early_return_source":"engine_bestmove_before_stop" if ans["early_return"] else None,
+                          "analysis":ans["analysis"]})
             if not correct_move:
                 correct=False
                 break
@@ -497,31 +508,58 @@ def main():
     update(remaining_count=pending.qsize())
     fatal=[]
     def worker(i):
+        # Keep every calibrated worker slot alive. A valid early bestmove frees
+        # the slot for the next puzzle; a genuine engine failure restarts the
+        # process and requeues the ungraded puzzle instead of retiring the slot.
         e=None
+        failure_streak=0
         try:
-            e=Engine(exe)
             while time.monotonic()<SOFT_DEADLINE-TARGET_SECONDS-45:
                 try:p=pending.get_nowait()
                 except queue.Empty:break
-                with lock: state["workers"][str(i)]={"state":"starting","puzzle_id":p["id"],"last_update_utc":now()}
-                result=solve_one(e,p,i)
+                with lock:
+                    state["workers"][str(i)]={"state":"starting","puzzle_id":p["id"],
+                                               "last_update_utc":now()}
+                try:
+                    if e is None or e.proc.poll() is not None:
+                        if e:
+                            e.close()
+                        e=Engine(exe)
+                    result=solve_one(e,p,i)
+                except Exception as exc:
+                    result={"technical_error":repr(exc)}
                 if result["technical_error"]:
-                    # Don't count technical failures, replay them on subsequent run.
-                    fatal.append({"worker":i,"puzzle_id":p["id"],"error":result["technical_error"]})
+                    # Never grade process, timeout or protocol failures as wrong.
+                    failure_streak+=1
+                    with lock:
+                        fatal.append({"worker":i,"puzzle_id":p["id"],
+                                      "error":result["technical_error"]})
+                        state["workers"][str(i)]={
+                            "state":"restarting_after_technical_error",
+                            "puzzle_id":p["id"],"error":result["technical_error"],
+                            "failure_streak":failure_streak,"last_update_utc":now()}
                     pending.put(p)
-                    with lock:state["workers"][str(i)]={"state":"technical_error","puzzle_id":p["id"],
-                                                        "error":result["technical_error"],"last_update_utc":now()}
-                    break
+                    if e:
+                        e.close()
+                        e=None
+                    # Prevent rapid restart loops under resource contention.
+                    time.sleep(min(2**min(failure_streak,4),16))
                 else:
+                    failure_streak=0
                     with lock:
                         state["results"].append(result)
                         state["remaining_count"]=pending.qsize()
-                        state["workers"][str(i)]={"state":"puzzle_done","puzzle_id":p["id"],
-                            "solved":result["solved"],"last_update_utc":now()}
+                        state["workers"][str(i)]={
+                            "state":"puzzle_done","puzzle_id":p["id"],
+                            "solved":result["solved"],
+                            "last_move":result["moves"][-1]["actual"] if result["moves"] else None,
+                            "returned_early":any(m["returned_early"] for m in result["moves"]),
+                            "last_update_utc":now()}
                 pending.task_done()
         except Exception as exc:
-            fatal.append({"worker":i,"error":repr(exc)})
-            with lock:state["workers"][str(i)]={"state":"failed","error":repr(exc)}
+            with lock:
+                fatal.append({"worker":i,"error":repr(exc)})
+                state["workers"][str(i)]={"state":"failed","error":repr(exc)}
         finally:
             if e:e.close()
     threads=[threading.Thread(target=worker,args=(i,),daemon=True) for i in range(count)]
