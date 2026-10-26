@@ -1,5 +1,6 @@
 """Safrad 2.1 benchmark. Windows GitHub Actions; progress is published independently of Actions logs."""
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 import gzip
 import datetime as dt
@@ -342,6 +343,7 @@ def calibrate_workers(path, board):
     try:
         for target in targets:
             if time.monotonic()>SOFT_DEADLINE-900:break
+            update(calibration_target=target, calibration_live_launched=len(engines))
             # Predict memory headroom based on measured running instances.
             rss=sum(psutil.Process(e.proc.pid).memory_info().rss for e in engines if e.proc.poll() is None)
             if engines and rss:
@@ -351,13 +353,31 @@ def calibrate_workers(path, board):
                     results.append({"target":target,"stable":False,"reason":"predicted_memory_pressure"})
                     break
             try:
-                while len(engines)<target:
+                # Launch the next cohort concurrently. Serial UCI handshakes
+                # become very slow once many previous engines are searching.
+                def launch_probe(_):
                     e=Engine(path)
-                    e.send("position fen "+board.fen())
-                    e.send("go infinite")
-                    engines.append(e)
-                    if psutil.virtual_memory().available<safety_floor:
-                        raise MemoryError("low_available_memory")
+                    try:
+                        e.send("position fen "+board.fen())
+                        e.send("go infinite")
+                        return e
+                    except Exception:
+                        e.close()
+                        raise
+                failures=[]
+                new_count=target-len(engines)
+                with ThreadPoolExecutor(max_workers=min(24,new_count)) as pool:
+                    futures=[pool.submit(launch_probe, i) for i in range(new_count)]
+                    for future in as_completed(futures):
+                        try:
+                            engines.append(future.result())
+                        except Exception as exc:
+                            failures.append(repr(exc))
+                        update(calibration_live_launched=len(engines))
+                if failures:
+                    raise RuntimeError("probe_launch_failures: "+str(failures[:3]))
+                if psutil.virtual_memory().available<safety_floor:
+                    raise MemoryError("low_available_memory")
                 started=time.monotonic()
                 while time.monotonic()-started<12:
                     if any(e.proc.poll() is not None for e in engines):
