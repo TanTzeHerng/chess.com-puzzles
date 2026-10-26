@@ -1,0 +1,59 @@
+name: Safrad NPS on free Linux via Wine
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'safrad_benchmark/compare_wine_linux.py'
+      - '.github/workflows/safrad21-linux-wine-nps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wine:
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [ubuntu-24.04, ubuntu-26.04]
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 35
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SAFRAD_COMPARISON_RUNNER: wine-${{ matrix.label }}
+      SAFRAD_COMPARISON_SECONDS: '120'
+      WINEDEBUG: '-all'
+      WINEPREFIX: ${{ runner.temp }}/safrad-wine
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Checkout original-engine benchmark
+        uses: actions/checkout@v4
+      - name: Install Wine x86 and x64 compatibility (unchanged Safrad executable)
+        shell: bash
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends wine wine64 wine32:i386
+          wine --version
+      - name: Initialize clean Wine prefix
+        shell: bash
+        run: |
+          wineboot -u
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install measurement dependencies
+        shell: bash
+        run: python -m pip install --disable-pip-version-check requests psutil
+      - name: Measure Safrad NPS using one unchanged engine under Wine
+        shell: bash
+        run: python -u safrad_benchmark/compare_wine_linux.py
+      - name: Preserve raw NPS measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safrad-nps-wine-${{ matrix.label }}
+          path: safrad_benchmark/nps/compare-wine-${{ matrix.label }}.json
+          if-no-files-found: ignore
