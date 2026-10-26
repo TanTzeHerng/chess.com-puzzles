@@ -1,0 +1,60 @@
+name: Safrad on free macOS Intel and Apple Silicon
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/safrad21-macos-wine-nps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mac_wine:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-15-intel
+            name: macos-15-intel
+          - label: macos-26
+            name: macos-26-arm64
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 35
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SAFRAD_COMPARISON_RUNNER: wine-${{ matrix.name }}
+      SAFRAD_COMPARISON_SECONDS: '120'
+      WINEDEBUG: '-all'
+      WINEPREFIX: /Users/runner/.safrad-wine
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Checkout original Safrad runner
+        uses: actions/checkout@v4
+      - name: Install Wine for unchanged Windows executable
+        shell: bash
+        run: |
+          if [ "$(uname -m)" = "arm64" ]; then
+            softwareupdate --install-rosetta --agree-to-license || true
+          fi
+          brew install --cask wine-stable
+          wine --version
+          wineboot -u
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencies
+        shell: bash
+        run: python -m pip install --disable-pip-version-check requests psutil
+      - name: Measure original Safrad EXE under Wine, one engine
+        shell: bash
+        run: python -u safrad_benchmark/compare_wine_linux.py
+      - name: Archive results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safrad-wine-${{ matrix.name }}
+          path: safrad_benchmark/nps/compare-wine-${{ matrix.name }}.json
+          if-no-files-found: ignore
