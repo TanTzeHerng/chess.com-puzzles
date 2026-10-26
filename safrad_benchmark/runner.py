@@ -1,6 +1,7 @@
 """Safrad 2.1 benchmark. Windows GitHub Actions; progress is published independently of Actions logs."""
 import base64
 import csv
+import gzip
 import datetime as dt
 import io
 import json
@@ -63,7 +64,20 @@ def snapshot():
     data["heartbeat_utc"] = now()
     data["runner_id"] = os.environ.get("GITHUB_RUN_ID")
     data["runner_attempt"] = os.environ.get("GITHUB_RUN_ATTEMPT")
-    data["completed_count"] = len(data["results"])
+    all_results = data["results"]
+    data["completed_count"] = len(all_results)
+    # Keep the GitHub checkpoint small and readable with hundreds of active workers.
+    if len(all_results) > 50:
+        data["compressed_results_gzip_b64"] = base64.b64encode(
+            gzip.compress(json.dumps(all_results, separators=(",", ":")).encode("utf-8"), compresslevel=6)
+        ).decode("ascii")
+        data["results"] = all_results[-50:]
+    for w in data["workers"].values():
+        info = w.get("analysis") or {}
+        if info:
+            info["raw_tail"] = info.get("raw_tail", [])[-2:]
+            if info.get("last_info"):
+                info["last_info"] = info["last_info"][-500:]
     data["workers_active"] = sum(v.get("state")=="searching" for v in data["workers"].values())
     return data
 
@@ -323,7 +337,7 @@ def calibrate_workers(path, board):
     safety_floor=max(int(psutil.virtual_memory().total*.14),700*1024*1024)
     engines=[]
     results=[]
-    targets=[1,2,4,8,16,32,64,128,256,512]
+    targets=[1,2,4,8,16,32,64,128,256,512,768,1024,1280,1536]
     best=0
     try:
         for target in targets:
@@ -416,7 +430,11 @@ def main():
     # Verify independent checkpoint visibility before expensive work begins.
     prev,_=gh_get()
     if prev and prev.get("schema_version")==1 and prev.get("shard")==SHARD and prev.get("shards")==SHARDS:
-        state["results"]=prev.get("results",[])
+        if prev.get("compressed_results_gzip_b64"):
+            state["results"] = json.loads(gzip.decompress(base64.b64decode(
+                prev["compressed_results_gzip_b64"])).decode("utf-8"))
+        else:
+            state["results"] = prev.get("results",[])
         log("RESUME",len(state["results"]))
     state["started_utc"]=now()
     publish()
