@@ -387,8 +387,17 @@ def calibrate_workers(path, board):
             time.sleep(1)
         return best
     finally:
+        # Stop stress-test engines as a group; sequential 2-second waits would
+        # waste many minutes when hundreds of engines are under CPU pressure.
         for e in engines:
-            e.close()
+            try: e.send("stop")
+            except Exception: pass
+        for e in engines:
+            try: e.proc.kill()
+            except Exception: pass
+        for e in engines:
+            try: e.proc.wait(timeout=1)
+            except Exception: pass
 
 def solve_one(e,p,worker_id):
     board=chess.Board(p["initial_fen"])
@@ -412,6 +421,10 @@ def solve_one(e,p,worker_id):
             moves.append({"expected":expected,"actual":ans["move"],
                           "correct":correct_move,"seconds":ans["elapsed_seconds"],
                           "returned_early":ans["early_return"],"analysis":ans["analysis"]})
+            if ans["early_return"]:
+                technical_error="Safrad terminated its infinite search before 600 seconds"
+                correct=None
+                break
             if not correct_move:
                 correct=False
                 break
