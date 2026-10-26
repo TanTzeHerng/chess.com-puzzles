@@ -1,0 +1,47 @@
+name: Safrad randomized single worker 2500+ puzzles
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'safrad_benchmark/single_random_runner.py'
+      - '.github/workflows/safrad-single-random-2500.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */5 * * *'
+permissions:
+  contents: write
+concurrency:
+  group: safrad-single-random-2500
+  cancel-in-progress: false
+jobs:
+  benchmark:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 340
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      WINEDEBUG: '-all'
+      WINEPREFIX: /home/runner/.safrad-single-random
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Wine for original Safrad executable
+        shell: bash
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends wine wine64 wine32:i386
+          wineboot -u
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install puzzle dependencies
+        run: python -m pip install --disable-pip-version-check chess requests psutil
+      - name: Search randomized 2500+ puzzles at most 600 seconds per solver move
+        run: python -u safrad_benchmark/single_random_runner.py
+      - name: Retain local checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safrad-single-random-${{ github.run_id }}
+          path: safrad_benchmark/download/safrad-single-random-last-local.json
+          if-no-files-found: ignore
