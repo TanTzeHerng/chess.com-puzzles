@@ -24,7 +24,7 @@ jobs:
       SAFRAD_COMPARISON_RUNNER: wine-${{ matrix.label }}
       SAFRAD_COMPARISON_SECONDS: '120'
       WINEDEBUG: '-all'
-      WINEPREFIX: ${{ runner.temp }}/safrad-wine
+      WINEPREFIX: /home/runner/.safrad-wine
       PYTHONUNBUFFERED: '1'
     steps:
       - name: Checkout original-engine benchmark
