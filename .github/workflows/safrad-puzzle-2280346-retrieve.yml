@@ -1,0 +1,101 @@
+name: Retrieve Chess.com Puzzle 2280346 for Safrad forensics
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/safrad-puzzle-2280346-retrieve.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Install chess legality verifier
+        run: python -m pip install -q chess requests
+      - name: Download published snapshot and extract the exact puzzle
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os,csv,io,zipfile,tempfile,requests,json,base64,datetime
+          from pathlib import Path
+          import chess
+          repo=os.environ["GITHUB_REPOSITORY"]
+          url="https://github.com/IchNukeDichWeg/chess.com-puzzles/releases/download/v2/puzzles-csv.zip"
+          zipname=Path(tempfile.gettempdir())/"safrad_chess_puzzle_2280346.zip"
+          with requests.get(url,stream=True,timeout=(30,300)) as resp:
+              resp.raise_for_status()
+              with zipname.open("wb") as f:
+                  for block in resp.iter_content(1024*1024):
+                      if block: f.write(block)
+          chars="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!?{~}(^)[_]@#$"
+          def decode(tcn):
+              result=[]
+              for i in range(0,len(tcn),2):
+                  a,b=chars.index(tcn[i]),chars.index(tcn[i+1])
+                  promotion=""
+                  if b>63:
+                      promotion="qnrbk"[(b-64)//3]
+                      b=a+(-8 if a<16 else 8)+(b-64)%3-1
+                  result.append(chr(97+a%8)+str(a//8+1)+chr(97+b%8)+str(b//8+1)+promotion)
+              return result
+          with zipfile.ZipFile(zipname) as z:
+              names=[n for n in z.namelist() if n.lower().endswith(".csv")]
+              assert names
+              csv.field_size_limit(100000000)
+              with z.open(sorted(names,key=len)[0]) as infile:
+                  reader=csv.DictReader(io.TextIOWrapper(infile,encoding="utf-8-sig",newline=""))
+                  row=next((x for x in reader if str(x.get("id"))=="2280346"),None)
+          if row is None: raise RuntimeError("Puzzle 2280346 absent from snapshot")
+          moves=decode(row["tcnMoveList"])
+          b=chess.Board(row["initialFen"])
+          records=[]
+          for i,u in enumerate(moves):
+              m=chess.Move.from_uci(u)
+              if m not in b.legal_moves: raise RuntimeError("Illegal dataset move at "+str(i)+" "+u)
+              before=b.fen()
+              san=b.san(m)
+              b.push(m)
+              records.append({"index":i,"uci":u,"san":san,"fen_before":before,
+                  "fen_after":b.fen(),"is_checkmate_after":b.is_checkmate(),
+                  "is_check_after":b.is_check()})
+          target=records[7] if len(records)>7 else None
+          alternative={}
+          if target:
+              b=chess.Board(target["fen_before"])
+              for u in ["d6c6","f1f5"]:
+                  m=chess.Move.from_uci(u)
+                  legal=m in b.legal_moves
+                  if legal:
+                      san=b.san(m);b.push(m)
+                      alternative[u]={"legal":True,"san":san,"check":b.is_check(),
+                      "checkmate":b.is_checkmate(),"legal_replies":[x.uci() for x in b.legal_moves],
+                      "fen_after":b.fen()}
+                      b.pop()
+                  else:alternative[u]={"legal":False}
+          result={"id":int(row["id"]),"rating":int(float(row["rating"])),
+                  "initialFen":row["initialFen"],"colorOfUser":row.get("colorOfUser"),
+                  "tcnMoveList":row["tcnMoveList"],"uci_moves":moves,
+                  "puzzle_start_fen":records[0]["fen_after"],
+                  "moves":records,"last_move_candidates":alternative,
+                  "dataset_pgn":row.get("pgn","")[:20000],
+                  "extracted_utc":datetime.datetime.now(datetime.timezone.utc).isoformat()}
+          print("PUZZLE_START",result["puzzle_start_fen"])
+          print("PUZZLE_MOVES",json.dumps(moves))
+          print("LAST_MOVE_CANDIDATES",json.dumps(alternative))
+          API="https://api.github.com/repos/"+repo+"/contents/safrad_benchmark/puzzles/2280346.json"
+          data=base64.b64encode(json.dumps(result,indent=2).encode()).decode()
+          req={"message":"Save source position and legal moves for Safrad puzzle 2280346","branch":"main","content":data}
+          gh=requests.Session()
+          gh.headers.update({"Authorization":"Bearer "+os.environ["GITHUB_TOKEN"],
+             "Accept":"application/vnd.github+json"})
+          ex=gh.get(API,timeout=30)
+          if ex.status_code==200:req["sha"]=ex.json()["sha"]
+          elif ex.status_code!=404:ex.raise_for_status()
+          w=gh.put(API,json=req,timeout=40)
+          w.raise_for_status()
+          print("EXTRACT_PUBLISHED",w.status_code)
+          PY
