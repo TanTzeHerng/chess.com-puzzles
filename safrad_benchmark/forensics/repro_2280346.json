@@ -1376,5 +1376,7 @@
     "d6c6_bestmove": 24,
     "correct_f1f5": 0,
     "crashes_or_timeouts": 0
-  }
+  },
+  "finished_utc": "2026-10-26T12:46:00.153267+00:00",
+  "completed": true
 }
