@@ -1,0 +1,76 @@
+name: Safrad ten simultaneous workers NPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'safrad_benchmark/ten_workers_nps.py'
+      - '.github/workflows/safrad21-ten-workers-nps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  stop_old_environment_comparisons:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Cancel leftover environment research
+        shell: bash
+        run: |
+          for id in 40295882165 40296404324; do
+            gh run cancel "$id" -R "$GITHUB_REPOSITORY" || true
+            gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/force-cancel" || true
+          done
+      - name: Disable old environment benchmark workflows
+        shell: bash
+        run: |
+          for name in \
+            safrad21-linux-wine-nps.yml \
+            safrad21-linux-wine-cpu-discovery.yml \
+            safrad21-macos-wine-nps.yml \
+            safrad21-cpu-lottery-nps.yml \
+            safrad21-compare-free-nps.yml \
+            safrad21-solo-nps.yml; do
+            gh workflow disable "$name" -R "$GITHUB_REPOSITORY" || true
+          done
+  ten_workers:
+    needs: stop_old_environment_comparisons
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      WINEPREFIX: /home/runner/.safrad-ten-workers-wine
+      WINEDEBUG: '-all'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Checkout ten-worker benchmark
+        uses: actions/checkout@v4
+      - name: Install Wine for unchanged Safrad executable
+        shell: bash
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends wine wine64 wine32:i386
+          wineboot -u
+      - name: Configure Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install measurement dependencies
+        shell: bash
+        run: python -m pip install --disable-pip-version-check requests psutil
+      - name: Run 10 simultaneous Safrad workers and report per-worker NPS
+        shell: bash
+        run: python -u safrad_benchmark/ten_workers_nps.py
+      - name: Retain full per-worker results on job completion
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safrad-ten-workers
+          path: safrad_benchmark/nps/ten-workers-concurrent.json
+          if-no-files-found: warn
