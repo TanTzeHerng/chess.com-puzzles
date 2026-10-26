@@ -15,5 +15,6 @@
     "after_d6c6_checkmate": false,
     "legal_replies": 36,
     "after_d6c6_fen": "7r/3n1ppp/2Q1pk2/4qb2/8/3B4/P5PP/5R1K b - - 6 33"
-  }
+  },
+  "verified_engine_sha256": "205556a25d8f201c642102e026c4dc778204b51aa29292ebd623faf9bd2d8d74"
 }
