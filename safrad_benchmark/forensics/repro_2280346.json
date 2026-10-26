@@ -873,6 +873,60 @@
       "move_is_checkmate": false,
       "legal_replies_after": 36,
       "false_mate1_d6c6": true
+    },
+    {
+      "mode": "same_process_3s",
+      "trial": 5,
+      "started_utc": "2026-10-26T12:45:30.549463+00:00",
+      "bestmove": "d6c6",
+      "legal_move": true,
+      "san": "Qc6",
+      "search_wall_seconds": 0.005,
+      "early_bestmove_without_stop": true,
+      "reported_mate_scores": [
+        {
+          "raw": "info depth 1 seldepth 2 time 0 nodes 18 nps 0 score mate 1 pv d6c6",
+          "depth": "1",
+          "nodes": "18",
+          "nps": "0",
+          "elapsed_ms": "0",
+          "score_mate": "1",
+          "pv": "d6c6"
+        }
+      ],
+      "last_info": {
+        "raw": "info time 0 nodes 18 nps 0",
+        "nodes": "18",
+        "nps": "0",
+        "elapsed_ms": "0"
+      },
+      "last_uci_lines": [
+        "info depth 0",
+        "info seldepth 0",
+        "info currmove -- currmovenumber 6",
+        "info time 0 nodes 1 nps 0",
+        "info depth 0 seldepth 0 time 0 nodes 0 nps 0 score None pv",
+        "info depth 1",
+        "info seldepth 0",
+        "info seldepth 1",
+        "info currmove d6d7 currmovenumber 1",
+        "info depth 1 seldepth 1 time 0 nodes 2 nps 0 score cp -108 pv d6d7",
+        "info currmove f1f3 currmovenumber 2",
+        "info seldepth 2",
+        "info currmove d6e5 currmovenumber 3",
+        "info currmove d3f5 currmovenumber 4",
+        "info currmove f1f2 currmovenumber 5",
+        "info currmove d6c6 currmovenumber 6",
+        "info depth 1 seldepth 2 time 0 nodes 17 nps 0 score cp -107 lowerbound pv d6c6",
+        "info depth 1 seldepth 2 time 0 nodes 18 nps 0 score mate 1 pv d6c6",
+        "info time 0 nodes 18 nps 0",
+        "bestmove d6c6"
+      ],
+      "uci_info_count": 19,
+      "move_is_check": false,
+      "move_is_checkmate": false,
+      "legal_replies_after": 36,
+      "false_mate1_d6c6": true
     }
   ],
   "independent_legality_check": {
@@ -883,9 +937,9 @@
   },
   "verified_engine_sha256": "205556a25d8f201c642102e026c4dc778204b51aa29292ebd623faf9bd2d8d74",
   "summary": {
-    "completed_trials": 16,
-    "reproduced_false_mate1": 16,
-    "d6c6_bestmove": 16,
+    "completed_trials": 17,
+    "reproduced_false_mate1": 17,
+    "d6c6_bestmove": 17,
     "correct_f1f5": 0,
     "crashes_or_timeouts": 0
   }
