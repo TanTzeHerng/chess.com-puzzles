@@ -1,0 +1,172 @@
+{
+  "id": 2280346,
+  "rating": 2512,
+  "initialFen": "7r/3nkppp/Q2pp1b1/3q4/8/8/P3B1PP/3R3K b - - 1 29",
+  "colorOfUser": "white",
+  "tcnMoveList": "JCOR0TdfULmtCKfLKLtL",
+  "uci_moves": [
+    "d5e4",
+    "a6d6",
+    "e7f6",
+    "d1f1",
+    "g6f5",
+    "e2d3",
+    "e4e5",
+    "f1f5",
+    "e5f5",
+    "d3f5"
+  ],
+  "puzzle_start_fen": "7r/3nkppp/Q2pp1b1/8/4q3/8/P3B1PP/3R3K w - - 2 30",
+  "moves": [
+    {
+      "index": 0,
+      "uci": "d5e4",
+      "san": "Qe4",
+      "fen_before": "7r/3nkppp/Q2pp1b1/3q4/8/8/P3B1PP/3R3K b - - 1 29",
+      "fen_after": "7r/3nkppp/Q2pp1b1/8/4q3/8/P3B1PP/3R3K w - - 2 30",
+      "is_checkmate_after": false,
+      "is_check_after": false
+    },
+    {
+      "index": 1,
+      "uci": "a6d6",
+      "san": "Qxd6+",
+      "fen_before": "7r/3nkppp/Q2pp1b1/8/4q3/8/P3B1PP/3R3K w - - 2 30",
+      "fen_after": "7r/3nkppp/3Qp1b1/8/4q3/8/P3B1PP/3R3K b - - 0 30",
+      "is_checkmate_after": false,
+      "is_check_after": true
+    },
+    {
+      "index": 2,
+      "uci": "e7f6",
+      "san": "Kf6",
+      "fen_before": "7r/3nkppp/3Qp1b1/8/4q3/8/P3B1PP/3R3K b - - 0 30",
+      "fen_after": "7r/3n1ppp/3Qpkb1/8/4q3/8/P3B1PP/3R3K w - - 1 31",
+      "is_checkmate_after": false,
+      "is_check_after": false
+    },
+    {
+      "index": 3,
+      "uci": "d1f1",
+      "san": "Rf1+",
+      "fen_before": "7r/3n1ppp/3Qpkb1/8/4q3/8/P3B1PP/3R3K w - - 1 31",
+      "fen_after": "7r/3n1ppp/3Qpkb1/8/4q3/8/P3B1PP/5R1K b - - 2 31",
+      "is_checkmate_after": false,
+      "is_check_after": true
+    },
+    {
+      "index": 4,
+      "uci": "g6f5",
+      "san": "Bf5",
+      "fen_before": "7r/3n1ppp/3Qpkb1/8/4q3/8/P3B1PP/5R1K b - - 2 31",
+      "fen_after": "7r/3n1ppp/3Qpk2/5b2/4q3/8/P3B1PP/5R1K w - - 3 32",
+      "is_checkmate_after": false,
+      "is_check_after": false
+    },
+    {
+      "index": 5,
+      "uci": "e2d3",
+      "san": "Bd3",
+      "fen_before": "7r/3n1ppp/3Qpk2/5b2/4q3/8/P3B1PP/5R1K w - - 3 32",
+      "fen_after": "7r/3n1ppp/3Qpk2/5b2/4q3/3B4/P5PP/5R1K b - - 4 32",
+      "is_checkmate_after": false,
+      "is_check_after": false
+    },
+    {
+      "index": 6,
+      "uci": "e4e5",
+      "san": "Qe5",
+      "fen_before": "7r/3n1ppp/3Qpk2/5b2/4q3/3B4/P5PP/5R1K b - - 4 32",
+      "fen_after": "7r/3n1ppp/3Qpk2/4qb2/8/3B4/P5PP/5R1K w - - 5 33",
+      "is_checkmate_after": false,
+      "is_check_after": false
+    },
+    {
+      "index": 7,
+      "uci": "f1f5",
+      "san": "Rxf5+",
+      "fen_before": "7r/3n1ppp/3Qpk2/4qb2/8/3B4/P5PP/5R1K w - - 5 33",
+      "fen_after": "7r/3n1ppp/3Qpk2/4qR2/8/3B4/P5PP/7K b - - 0 33",
+      "is_checkmate_after": false,
+      "is_check_after": true
+    },
+    {
+      "index": 8,
+      "uci": "e5f5",
+      "san": "Qxf5",
+      "fen_before": "7r/3n1ppp/3Qpk2/4qR2/8/3B4/P5PP/7K b - - 0 33",
+      "fen_after": "7r/3n1ppp/3Qpk2/5q2/8/3B4/P5PP/7K w - - 0 34",
+      "is_checkmate_after": false,
+      "is_check_after": false
+    },
+    {
+      "index": 9,
+      "uci": "d3f5",
+      "san": "Bxf5",
+      "fen_before": "7r/3n1ppp/3Qpk2/5q2/8/3B4/P5PP/7K w - - 0 34",
+      "fen_after": "7r/3n1ppp/3Qpk2/5B2/8/8/P5PP/7K b - - 0 34",
+      "is_checkmate_after": false,
+      "is_check_after": false
+    }
+  ],
+  "last_move_candidates": {
+    "d6c6": {
+      "legal": true,
+      "san": "Qc6",
+      "check": false,
+      "checkmate": false,
+      "legal_replies": [
+        "h8g8",
+        "h8f8",
+        "h8e8",
+        "h8d8",
+        "h8c8",
+        "h8b8",
+        "h8a8",
+        "d7f8",
+        "d7b8",
+        "d7b6",
+        "d7c5",
+        "f6e7",
+        "f6g6",
+        "f6g5",
+        "e5b8",
+        "e5c7",
+        "e5d6",
+        "e5d5",
+        "e5c5",
+        "e5b5",
+        "e5a5",
+        "e5f4",
+        "e5e4",
+        "e5d4",
+        "e5g3",
+        "e5e3",
+        "e5c3",
+        "e5h2",
+        "e5e2",
+        "e5b2",
+        "e5e1",
+        "e5a1",
+        "h7h6",
+        "g7g6",
+        "h7h5",
+        "g7g5"
+      ],
+      "fen_after": "7r/3n1ppp/2Q1pk2/4qb2/8/3B4/P5PP/5R1K b - - 6 33"
+    },
+    "f1f5": {
+      "legal": true,
+      "san": "Rxf5+",
+      "check": true,
+      "checkmate": false,
+      "legal_replies": [
+        "f6g6",
+        "e5f5"
+      ],
+      "fen_after": "7r/3n1ppp/3Qpk2/4qR2/8/3B4/P5PP/7K b - - 0 33"
+    }
+  },
+  "dataset_pgn": "[Event \"?\"]\n[Site \"?\"]\n[Date \"????.??.??\"]\n[Round \"?\"]\n[White \"?\"]\n[Black \"?\"]\n[Result \"*\"]\n[SetUp \"1\"]\n[FEN \"7r/3nkppp/Q2pp1b1/3q4/8/8/P3B1PP/3R3K b - - 1 29\"]\n[Puzzle_Length \"5\"]\n[Tactic_line \"Qxd6+ Kf6 Rf1+ Bf5 Bd3 Qe5 Rxf5+ Qxf5 Bxf5\"]\n\n29... Qe4 30. Qxd6+ ({-5.86} 30. Bb5 Ne5 31. Qxd6+ Kf6 32. Qc5 Bf5 33. a4 Ra8\n34. Qc3 Qc2 \u2212+) 30... Kf6 31. Rf1+ ({-0.36} 31. Bf3 Qe5 32. Qxd7 Bf5 33. a4 Kg6\n34. Qd6 Qxd6 35. Rxd6 Rb8 =) ({-1.22} 31. Bd3 Qe3 32. Rf1+ Kg5 33. Rf3 Qe1+ 34.\nRf1 Qe5 35. Qxd7 Bxd3 \u2a71) 31... Bf5 32. Bd3 ({-5.61} 32. Qd2 Rb8 33. a4 Ne5 34.\na5 Rb1 35. Kg1 Rxf1+ 36. Bxf1 Kg6 \u2212+) ({-5.61} 32. Rxf5+ Qxf5 33. Qxd7 Rb8 34.\nQd4+ Qe5 35. Qf2+ Kg6 36. Bf1 Rb2 \u2212+) 32... Qe5 33. Rxf5+ ({-1.44} 33. Qxd7 h5\n34. Bxf5 exf5 35. Qc6+ Qe6 36. Rc1 Qxc6 37. Rxc6+ Ke5 \u2a71) ({-6.04} 33. Qc6 Ke7\n34. Bxf5 exf5 35. a4 Rb8 36. Qc1 Nf6 37. Qa3+ Ke8 \u2212+) 33... Qxf5 34. Bxf5\n({-5.80} 34. Qxd7 Qd5 35. Qxd5 exd5 36. a4 Ra8 37. Bb5 Rc8 38. h4 Rc3 \u2212+)\n({-8.33} 34. h3 Qd5 35. Qf4+ Ke7 36. Bc2 Rb8 37. Bb3 Qd6 38. Qg5+ Kf8 \u2212+) *",
+  "extracted_utc": "2026-10-26T12:34:30.914592+00:00"
+}
