@@ -338,7 +338,7 @@ def calibrate_workers(path, board):
     safety_floor=max(int(psutil.virtual_memory().total*.14),700*1024*1024)
     engines=[]
     results=[]
-    targets=[1,2,4,8,16,32,64,128,256,512,768,1024,1280,1536]
+    targets=[1,2,4,8,16,32,64,128]  # immediate active-search benchmark using previous stable 128-per-runner checkpoint; avoid 256+ startup stall
     best=0
     try:
         for target in targets:

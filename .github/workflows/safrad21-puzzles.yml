@@ -23,7 +23,7 @@ jobs:
         shard: [0, 1, 2, 3]
     concurrency:
       group: safrad21-2500plus-${{ matrix.shard }}
-      cancel-in-progress: false
+      cancel-in-progress: true
     env:
       SAFRAD_SHARD: ${{ matrix.shard }}
       SAFRAD_SHARDS: '4'
