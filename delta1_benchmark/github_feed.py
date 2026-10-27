@@ -1,6 +1,6 @@
 import base64,json,os,time,urllib.error,urllib.parse,urllib.request
 REPO=os.environ.get('GITHUB_REPOSITORY','TanTzeHerng/chess.com-puzzles')
-BRANCH=os.environ.get('DELTA_BRANCH','experiment/delta1-full-grading-reset-20261027')
+BRANCH=os.environ.get('DELTA_BRANCH','experiment/delta1-2500plus-999999-20261027')
 TOKEN=os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN','')
 SHAS={}
 def api(path,data=None,method=None,raw=False):

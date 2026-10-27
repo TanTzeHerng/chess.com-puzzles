@@ -8,7 +8,7 @@ def preparation_heartbeat():
  from github_feed import publish
  while not DONE.is_set():
   for shard in range(4):
-   d={'schema':2,'epoch':'20261027T081416Z','run_id':'preparing','shard':shard,'heartbeat_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'level':'009999','initial_rating':2000,'initial_rd':350,'max_logical_workers':256,'actual_running_workers':0,'active':{},'eligible':0,'recent':[],'rating_bins':{},'counts':{'solved':0,'missed':0,'technical':0,'running':0,'queued':0},'state':'preparing','source_rows_scanned':SCANNED}
+   d={'schema':2,'epoch':'20261027T090152Z','run_id':'preparing','shard':shard,'heartbeat_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'level':'999999','initial_rating':2000,'initial_rd':350,'max_logical_workers':256,'actual_running_workers':0,'active':{},'eligible':0,'recent':[],'rating_bins':{},'counts':{'solved':0,'missed':0,'technical':0,'running':0,'queued':0},'state':'preparing','source_rows_scanned':SCANNED}
    try:publish(shard,d)
    except Exception as e:print('SOURCE_FEED_ERROR',repr(e),flush=True)
   DONE.wait(30)
@@ -24,7 +24,7 @@ def normalize(row):
 def main():
  global SCANNED
  threading.Thread(target=preparation_heartbeat,daemon=True).start()
- target=json.loads((ROOT/'target_manifest.json').read_text());original=target['puzzles']
+ original=[]
  archive=Path('/tmp/delta1-source-puzzles-json.zip')
  if not archive.exists():
   req=urllib.request.Request('https://github.com/IchNukeDichWeg/chess.com-puzzles/releases/download/v2/puzzles-json.zip',headers={'User-Agent':'Delta1FullPuzzleGrader'})
@@ -36,7 +36,7 @@ def main():
    SCANNED+=1
    try:rating=int(row['rating'])
    except (KeyError,ValueError,TypeError):continue
-   if not 2000<=rating<=2500:continue
+   if rating<2500:continue
    try:item=normalize(row)
    except Exception as e:item={'id':int(ident),'rating':rating,'initialFen':row.get('initialFen'),'tcnMoveList':row.get('tcnMoveList'),'source_error':repr(e)}
    found[int(ident)]=item
@@ -45,7 +45,7 @@ def main():
  for index,ident in enumerate(first+remaining):
   row=found[ident];row.update(index=index,lane=index%256);ordered.append(row)
  (ROOT/'sources.json').write_text(json.dumps(ordered,separators=(',',':')))
- (ROOT/'source_metadata.json').write_text(json.dumps({'epoch':'20261027T081416Z','total_eligible':len(ordered),'min_rating':2000,'max_rating':2500,'original_prefix_preserved':len(first),'seed':20261027,'source_errors':sum('source_error' in r for r in ordered)}))
+ (ROOT/'source_metadata.json').write_text(json.dumps({'epoch':'20261027T090152Z','total_eligible':len(ordered),'min_rating':2500,'max_rating':None,'original_prefix_preserved':len(first),'seed':20261027,'source_errors':sum('source_error' in r for r in ordered)}))
  print('FULL_DATASET_ELIGIBLE',len(ordered),'source_errors',sum('source_error' in r for r in ordered),flush=True)
  DONE.set()
 if __name__=='__main__':main()

@@ -6,7 +6,7 @@ ROOT=Path(__file__).resolve().parent
 P=argparse.ArgumentParser();P.add_argument('--shard',type=int,required=True);P.add_argument('--shards',type=int,default=4);P.add_argument('--budget',type=int,default=19500);P.add_argument('--work',default='work');P.add_argument('--workers',type=int,default=64);A=P.parse_args()
 assert 1<=A.workers<=64
 WORK=Path(A.work).resolve();WORK.mkdir(parents=True,exist_ok=True)
-ALL_ROWS=json.loads((ROOT/'sources.json').read_text());TOTAL=len(ALL_ROWS);ROWS=[r for r in ALL_ROWS if r['index']%A.shards==A.shard];BYID={r['id']:r for r in ROWS};EPOCH='20261027T081416Z'
+ALL_ROWS=json.loads((ROOT/'sources.json').read_text());TOTAL=len(ALL_ROWS);ROWS=[r for r in ALL_ROWS if r['index']%A.shards==A.shard];BYID={r['id']:r for r in ROWS};EPOCH='20261027T090152Z'
 START=time.monotonic();RESULTS={};ACTIVE={};PROCS={};STOP=False;TECHNICAL={};RETRY=[];NEW=collections.deque();INFLIGHT=set();ATTEMPTED=set()
 def utc():return datetime.datetime.now(datetime.timezone.utc).isoformat()
 def atom(path,x):
@@ -19,7 +19,7 @@ def snapshot():
  for r in result:
   z=bins.setdefault(str(r['rating']),[0,0]);z[0 if r['score']==1 else 1]+=1
  recent=sorted(result,key=lambda r:r['finished_at'],reverse=True)[:50]
- return {'schema':2,'epoch':EPOCH,'run_id':os.environ.get('GITHUB_RUN_ID','local'),'shard':A.shard,'heartbeat_utc':utc(),'level':'009999','initial_rating':2000,'initial_rd':350,'max_logical_workers':256,'actual_running_workers':len(live),'active':live,'eligible':TOTAL,'shard_eligible':len(ROWS),'recent':recent,'rating_bins':bins,'counts':{'solved':sum(r['status']=='solved' for r in result),'missed':sum(r['status']=='missed' for r in result),'technical':len(TECHNICAL),'retry_waiting':len(RETRY),'technical_attempts':sum(r.get('technical_attempts',1) for r in TECHNICAL.values()),'attempted_unique':len(ATTEMPTED),'running':len(live),'queued':len(NEW)},'queue_mode':'shared queue: free worker takes next puzzle immediately; technical errors automatically retried','state':'pausing' if STOP else 'completed' if len(result)==len(ROWS) else 'running','grading_rule':'All solver moves must match complete Chess.com line, with verified ROM boards; technical errors unscored.'}
+ return {'schema':2,'epoch':EPOCH,'run_id':os.environ.get('GITHUB_RUN_ID','local'),'shard':A.shard,'heartbeat_utc':utc(),'level':'999999','initial_rating':2000,'initial_rd':350,'max_logical_workers':256,'actual_running_workers':len(live),'active':live,'eligible':TOTAL,'shard_eligible':len(ROWS),'recent':recent,'rating_bins':bins,'counts':{'solved':sum(r['status']=='solved' for r in result),'missed':sum(r['status']=='missed' for r in result),'technical':len(TECHNICAL),'retry_waiting':len(RETRY),'technical_attempts':sum(r.get('technical_attempts',1) for r in TECHNICAL.values()),'attempted_unique':len(ATTEMPTED),'running':len(live),'queued':len(NEW)},'queue_mode':'shared queue: free worker takes next puzzle immediately; technical errors automatically retried','state':'pausing' if STOP else 'completed' if len(result)==len(ROWS) else 'running','grading_rule':'All solver moves must match complete Chess.com line, with verified ROM boards; technical errors unscored.'}
 def saved_result(row):
  path=WORK/(str(row['id'])+'_result.json')
  if path.exists():
@@ -38,7 +38,7 @@ def source_check(row):
   if len(u)!=4:raise ValueError('Promotion input requires separately verified adapter')
   b.push(m)
 async def run(row,slot):
- ident=row['id'];key=str(ident);engine=None;trace=None;attempt={'id':ident,'index':row['index'],'lane':row['lane'],'worker_id':A.shard*64+slot,'rating':row['rating'],'level':'009999','started_at':utc(),'status':'running','score':None,'moves':[],'moves_required':len(row.get('solutionUci',[])[::2]),'moves_matched':0,'initial_rom_board_verified':False}
+ ident=row['id'];key=str(ident);engine=None;trace=None;attempt={'id':ident,'index':row['index'],'lane':row['lane'],'worker_id':A.shard*64+slot,'rating':row['rating'],'level':'999999','started_at':utc(),'status':'running','score':None,'moves':[],'moves_required':len(row.get('solutionUci',[])[::2]),'moves_matched':0,'initial_rom_board_verified':False}
  def log(kind,**kw):trace.write(json.dumps({'utc':utc(),'kind':kind,**kw})+'\n')
  async def send(s):log('send',command=s);engine.stdin.write((s+'\n').encode());await engine.stdin.drain()
  async def until(prefix):
@@ -60,7 +60,7 @@ async def run(row,slot):
    attempt=meta['attempt'];b=chess.Board(meta['fen']);start_i=meta['solver_ply'];await send('load '+str(WORK/meta['checkpoint']));await until('loaded checkpoint ')
   else:
    b=chess.Board(row['initialFen']);await send('setup '+row['initialFen']);ready=await until('ready ')
-   if 'board_hex='+bh(b) not in ready or 'level=009999' not in ready:raise RuntimeError('Initial ROM board/level verification failed')
+   if 'board_hex='+bh(b) not in ready or 'level=999999' not in ready:raise RuntimeError('Initial ROM board/level verification failed')
    color='white' if row['colorOfUser']=='white' else 'black'
    if 'computer_color='+color not in ready:raise RuntimeError('Wrong solver side')
    attempt['initial_rom_board_verified']=True;await send('play '+row['setupMoveUci']);b.push_uci(row['setupMoveUci']);start_i=0

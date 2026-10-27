@@ -2,7 +2,7 @@
 import base64,datetime as dt,json,math,os,pathlib,subprocess,threading,time,urllib.parse,urllib.request
 from http.server import ThreadingHTTPServer,SimpleHTTPRequestHandler
 ROOT=pathlib.Path(__file__).resolve().parent
-BRANCH='experiment/delta1-full-grading-reset-20261027';REPO='TanTzeHerng/chess.com-puzzles'
+BRANCH='experiment/delta1-2500plus-999999-20261027';REPO='TanTzeHerng/chess.com-puzzles'
 GH=r'C:\Program Files\GitHub CLI\gh.exe';TOKEN=None;POLL=10;LAST_GOOD={};FETCH_ERROR=None
 CREATE_NO_WINDOW=0x08000000
 def utc():return dt.datetime.now(dt.timezone.utc).isoformat()
@@ -29,13 +29,13 @@ def fetch(shard):
  except Exception:
   url='https://raw.githubusercontent.com/'+REPO+'/'+BRANCH+'/'+path+'?_='+str(time.time_ns())
   with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'Delta1PCDashboard','Cache-Control':'no-cache'}),timeout=12) as r:d=json.load(r)
- if d.get('schema')!=2 or d.get('level')!='009999':raise ValueError('Wrong Delta feed schema/level')
+ if d.get('schema')!=2 or d.get('level')!='999999':raise ValueError('Wrong Delta feed schema/level')
  if d['shard']!=shard:raise ValueError('Wrong shard identity')
  return d
 def aggregate(parts):
  live=[];stale=[];recent=[];bins={};counts={k:0 for k in ['solved','missed','technical','retry_waiting','technical_attempts','attempted_unique','queued']}
  for shard,d in parts.items():
-  if d.get('epoch')!='20261027T081416Z':raise ValueError('Old run epoch rejected')
+  if d.get('epoch')!='20261027T090152Z':raise ValueError('Old run epoch rejected')
   if age(d['heartbeat_utc'])>120 and d.get('state')!='completed':stale.append(shard)
   elif d.get('state')=='running':live+=list(d.get('active',{}).values())
   for k in counts:counts[k]+=d.get('counts',{}).get(k,0)
@@ -61,10 +61,10 @@ def aggregate(parts):
  trend=[]
  try:
   previous=json.loads((ROOT/'status.json').read_text(encoding='utf8'))
-  if previous.get('epoch')=='20261027T081416Z':trend=previous.get('trend',[])
+  if previous.get('epoch')=='20261027T090152Z':trend=previous.get('trend',[])
  except Exception:pass
  if not trend or trend[-1].get('utc')!=last_update:trend.append({'utc':last_update,'rating':rating})
- return {'epoch':'20261027T081416Z','engine':'Novag Chess Champion Delta-1','level':'009999','rating':rating,'rd':rd,'initial_rating':2000,'initial_rd':350,'rated':counts['solved']+counts['missed'],'max_logical_workers':256,'actual_running_workers':len(live),'counts':counts,'eligible':eligible,'recent':[{'id':r['id'],'rating':r['rating'],'score':r['score'],'after_rating':rating,'moves_matched':r.get('moves_matched'),'moves_required':r.get('moves_required')} for r in sorted(recent,key=lambda r:r.get('finished_at',''),reverse=True)[:40]],'trend':trend[-1000:],'state':state,'last_update':last_update,'shards_reporting':len(parts),'stale_shards':stale,'complete':complete,'message':'Level 009999. A free worker immediately takes another puzzle. Every technical error is queued for retry, unscored. All solver moves and ROM board squares must verify. Glicko-1 is recalculated over this run as one rating period against fixed puzzle ratings.'}
+ return {'epoch':'20261027T090152Z','engine':'Novag Chess Champion Delta-1','level':'999999','min_puzzle_rating':2500,'max_puzzle_rating':None,'rating':rating,'rd':rd,'initial_rating':2000,'initial_rd':350,'rated':counts['solved']+counts['missed'],'max_logical_workers':256,'actual_running_workers':len(live),'counts':counts,'eligible':eligible,'recent':[{'id':r['id'],'rating':r['rating'],'score':r['score'],'after_rating':rating,'moves_matched':r.get('moves_matched'),'moves_required':r.get('moves_required')} for r in sorted(recent,key=lambda r:r.get('finished_at',''),reverse=True)[:40]],'trend':trend[-1000:],'state':state,'last_update':last_update,'shards_reporting':len(parts),'stale_shards':stale,'complete':complete,'message':'Level 999999; all available Chess.com puzzles rated 2500+. A free worker immediately takes another puzzle. Every technical error is queued for retry, unscored. All solver moves and ROM board squares must verify. Glicko-1 is recalculated over this run as one rating period against fixed puzzle ratings.'}
 def loop():
  global FETCH_ERROR
  from concurrent.futures import ThreadPoolExecutor,as_completed

@@ -1,5 +1,5 @@
 import os,pathlib,subprocess,sys,tempfile,zipfile
-TAG='delta1-full-state-20261027T081416Z'
+TAG='delta1-full-state-20261027T090152Z'
 mode,shard,where=sys.argv[1:];dest=pathlib.Path(where).resolve();dest.mkdir(parents=True,exist_ok=True)
 name='state-shard-'+shard+'.zip'
 with tempfile.TemporaryDirectory(prefix='delta1-state-') as temporary:
