@@ -1,0 +1,8 @@
+__pycache__/
+local_test/
+work/
+sources.json
+*.exe
+*.bin
+*.tmp
+*.log
