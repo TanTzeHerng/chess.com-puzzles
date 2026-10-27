@@ -1,6 +1,7 @@
 """Display-only PC relay. All Delta-1 engines and grading stay in cloud."""
 import base64,datetime as dt,json,math,os,pathlib,subprocess,threading,time,urllib.parse,urllib.request
 from http.server import ThreadingHTTPServer,SimpleHTTPRequestHandler
+from rating_history import scored_history
 ROOT=pathlib.Path(__file__).resolve().parent
 BRANCH='experiment/delta1-2500plus-999999-20261027';REPO='TanTzeHerng/chess.com-puzzles'
 GH=r'C:\Program Files\GitHub CLI\gh.exe';TOKEN=None;POLL=10;LAST_GOOD={};FETCH_ERROR=None
@@ -58,13 +59,13 @@ def aggregate(parts):
  state='COMPLETED' if complete else 'STALE OR PARTIAL CLOUD FEED' if stale or len(parts)<4 else 'SEARCHING AND GRADING AUTOMATICALLY' if live else 'CLOUD WORKERS STARTING'
  last_update=min((d['heartbeat_utc'] for d in parts.values() if d.get('state')!='completed'),default=max((d['heartbeat_utc'] for d in parts.values()),default=utc()))
  eligible=max((d.get('eligible',0) for d in parts.values()),default=0)
- trend=[]
+ previous={}
  try:
-  previous=json.loads((ROOT/'status.json').read_text(encoding='utf8'))
-  if previous.get('epoch')=='20261027T090152Z' and previous.get('initial_rating')==2500:trend=previous.get('trend',[])
+  candidate=json.loads((ROOT/'status.json').read_text(encoding='utf8'))
+  if candidate.get('epoch')=='20261027T090152Z' and candidate.get('initial_rating')==2500:previous=candidate
  except Exception:pass
- if not trend or trend[-1].get('utc')!=last_update:trend.append({'utc':last_update,'rating':rating})
- return {'epoch':'20261027T090152Z','engine':'Novag Chess Champion Delta-1','level':'999999','min_puzzle_rating':2500,'max_puzzle_rating':None,'rating':rating,'rd':rd,'initial_rating':2500,'initial_rd':350,'rated':counts['solved']+counts['missed'],'max_logical_workers':256,'actual_running_workers':len(live),'counts':counts,'eligible':eligible,'recent':[{'id':r['id'],'rating':r['rating'],'score':r['score'],'after_rating':rating,'moves_matched':r.get('moves_matched'),'moves_required':r.get('moves_required')} for r in sorted(recent,key=lambda r:r.get('finished_at',''),reverse=True)[:40]],'trend':trend[-1000:],'state':state,'last_update':last_update,'shards_reporting':len(parts),'stale_shards':stale,'complete':complete,'message':'Level 999999; all available Chess.com puzzles rated 2500+. A free worker immediately takes another puzzle. Every technical error is queued for retry, unscored. All solver moves and ROM board squares must verify. Glicko-1 is recalculated over this run as one rating period against fixed puzzle ratings; initial Glicko2500 / RD350.'}
+ trend,events,missing=scored_history(previous,recent,bins,rating)
+ return {'epoch':'20261027T090152Z','engine':'Novag Chess Champion Delta-1','level':'999999','min_puzzle_rating':2500,'max_puzzle_rating':None,'rating':rating,'rd':rd,'initial_rating':2500,'initial_rd':350,'rated':counts['solved']+counts['missed'],'max_logical_workers':256,'actual_running_workers':len(live),'counts':counts,'eligible':eligible,'recent':[{'id':r['id'],'rating':r['rating'],'score':r['score'],'after_rating':rating,'moves_matched':r.get('moves_matched'),'moves_required':r.get('moves_required')} for r in sorted(recent,key=lambda r:r.get('finished_at',''),reverse=True)[:40]],'trend':trend,'rating_events':events,'rating_history_version':2,'rating_history_missing':missing,'state':state,'last_update':last_update,'shards_reporting':len(parts),'stale_shards':stale,'complete':complete,'message':'Level 999999; all available Chess.com puzzles rated 2500+. A free worker immediately takes another puzzle. Every technical error is queued for retry, unscored. All solver moves and ROM board squares must verify. Glicko-1 is recalculated over this run as one rating period against fixed puzzle ratings; initial Glicko2500 / RD350.'}
 def loop():
  global FETCH_ERROR
  from concurrent.futures import ThreadPoolExecutor,as_completed
