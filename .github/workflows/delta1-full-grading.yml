@@ -1,0 +1,88 @@
+name: Delta-1 automatic full-puzzle grading
+on:
+  push:
+    paths: [.github/workflows/delta1-full-grading.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: delta1-full-grading-256
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/delta1-full-grading-20261027
+      - run: python3 -m pip install --quiet chess ijson
+      - run: python3 delta1_benchmark/prepare_sources.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: delta1-complete-sources
+          path: delta1_benchmark/sources.json
+          retention-days: 3
+  grade:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DELTA_BRANCH: experiment/delta1-full-grading-20261027
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/delta1-full-grading-20261027
+      - run: python3 -m pip install --quiet chess
+      - uses: actions/download-artifact@v4
+        with:
+          name: delta1-complete-sources
+          path: delta1_benchmark
+      - name: Build unchanged-ROM emulator with verified keypad adapter
+        run: g++ -std=c++17 -O3 -DNDEBUG -pthread delta1_benchmark/delta1_puzzle_engine.cpp -o delta1_benchmark/delta1_puzzle_engine
+      - name: Restore previous emulated CPU checkpoints
+        run: |
+          mkdir -p delta1_benchmark/work
+          python3 delta1_benchmark/github_feed.py ${{ matrix.shard }} delta1_benchmark/work
+      - name: Grade all solver moves in 64 distinct lanes
+        run: python3 -u delta1_benchmark/cloud_grade.py --shard ${{ matrix.shard }} --budget 19500 --work delta1_benchmark/work
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: delta1-full-checkpoint-v1-s${{ matrix.shard }}
+          path: delta1_benchmark/work
+          retention-days: 3
+          if-no-files-found: warn
+  continue:
+    needs: grade
+    if: always() && needs.grade.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DELTA_BRANCH: experiment/delta1-full-grading-20261027
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/delta1-full-grading-20261027
+      - name: Resume only if the verified run is unfinished
+        run: |
+          python3 - <<'PY'
+          import json,os,subprocess,sys,urllib.parse
+          sys.path.insert(0,'delta1_benchmark')
+          from github_feed import api,BRANCH
+          import base64
+          all_complete=True
+          for shard in range(4):
+              p=api('contents/delta1_benchmark/progress/shard-'+str(shard)+'.json?ref='+urllib.parse.quote(BRANCH,safe=''))
+              d=json.loads(base64.b64decode(p['content']))
+              if d['state']!='completed':all_complete=False
+          if not all_complete:
+              subprocess.run(['gh','workflow','run','delta1-full-grading.yml','--repo',os.environ['GITHUB_REPOSITORY'],'--ref','main'],check=True)
+          PY
