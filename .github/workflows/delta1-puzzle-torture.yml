@@ -1,0 +1,93 @@
+name: Delta-1 Puzzle Torture - Donaldtrumpo
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: delta1-puzzle-torture-20261028
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Create independent checkpoint release if absent
+        run: |
+          gh release view delta1-puzzle-torture-20261028 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create delta1-puzzle-torture-20261028 --repo "$GITHUB_REPOSITORY" --target experiment/delta1-puzzle-torture-20261028 --prerelease --title "Delta-1 Puzzle Torture checkpoints" --notes "Independent time-limit-stripped Delta-1, Donaldtrumpo Glicko-1 and resumable F8 CPU states. No existing Delta-1 run altered."
+  torture:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHON: python3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/delta1-puzzle-torture-20261028
+      - name: Install Python chess and load 19,492 independent eligible 2500+ puzzles
+        run: |
+          python3 -m pip install --quiet chess
+          mkdir -p delta1_torture/work /tmp/delta1-torture-sources
+          gh release download delta1-full-state-20261027T090152Z --pattern sources-full.json.gz --dir /tmp/delta1-torture-sources --clobber
+          gzip -dc /tmp/delta1-torture-sources/sources-full.json.gz >delta1_torture/sources.json
+          python3 - <<'PY'
+          import json
+          a=json.load(open('delta1_torture/sources.json'))
+          assert len(a)==19492,len(a)
+          assert len({v['id'] for v in a})==len(a)
+          print('TORTURE_SOURCE_PUZZLES',len(a))
+          PY
+      - name: Verify isolated one-byte time-limit-stripped ROM and compile
+        run: |
+          python3 delta1_torture/verify_rom.py
+          g++ -O3 -std=c++17 -DNDEBUG -pthread delta1_torture/torture_engine.cpp -o delta1_torture/torture_engine
+      - name: Restore independently saved F8 states
+        run: |
+          python3 delta1_torture/checkpoint.py restore ${{ matrix.shard }} delta1_torture/work
+      - name: Search round-robin, recognize briefly displayed correct moves, and publish Donaldtrumpo
+        run: |
+          python3 -u delta1_torture/torture_scheduler.py --shard ${{ matrix.shard }} --workers 16 --budget 19000 --work delta1_torture/work
+      - name: Save entire search-state rotation, rating ledger, and ascending time distributions
+        if: always()
+        run: |
+          python3 delta1_torture/checkpoint.py save ${{ matrix.shard }} delta1_torture/work
+  continue:
+    needs: torture
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Start next torture round only if unfinished eligible puzzles remain
+        run: |
+          python3 - <<'PY'
+          import base64,json,os,subprocess,urllib.request
+          branch='experiment/delta1-puzzle-torture-20261028'
+          remaining=0
+          for shard in range(4):
+              path='delta1_torture/progress/shard-'+str(shard)+'.json'
+              try:
+                  uri='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/contents/'+path+'?ref='+branch
+                  req=urllib.request.Request(uri,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+                  with urllib.request.urlopen(req,timeout=25) as r: obj=json.load(r)
+                  data=json.loads(base64.b64decode(obj['content']))
+                  c=data['counts']
+                  remaining+=c['in_rotation']+c['never_started']
+              except Exception as e:
+                  print('RECHECK_SHARD_FAILED',shard,str(e),flush=True)
+                  remaining+=1
+          print('TORTURE_UNFINISHED',remaining,flush=True)
+          if remaining:
+              subprocess.run(['gh','workflow','run','delta1-puzzle-torture.yml',
+                '--repo',os.environ['GITHUB_REPOSITORY'],
+                '--ref',branch],check=True)
+          PY
