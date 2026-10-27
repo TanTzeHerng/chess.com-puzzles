@@ -1,6 +1,6 @@
 import base64,json,os,time,urllib.error,urllib.parse,urllib.request
 REPO=os.environ.get('GITHUB_REPOSITORY','TanTzeHerng/chess.com-puzzles')
-BRANCH=os.environ.get('DELTA_BRANCH','experiment/delta1-full-grading-20261027')
+BRANCH=os.environ.get('DELTA_BRANCH','experiment/delta1-full-grading-reset-20261027')
 TOKEN=os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN','')
 SHAS={}
 def api(path,data=None,method=None,raw=False):
@@ -15,7 +15,8 @@ def publish(shard,record):
     except urllib.error.HTTPError as e:
      if e.code!=404:raise
      SHAS[path]=None
-   body={'message':'Delta-1 shard '+str(shard)+': '+str(len(record['results']))+' fully graded results [skip ci]','branch':BRANCH,'content':base64.b64encode(json.dumps(record,separators=(',',':')).encode()).decode()}
+   count=record['counts']['solved']+record['counts']['missed']
+   body={'message':'Delta-1 shard '+str(shard)+': '+str(count)+' fully graded results [skip ci]','branch':BRANCH,'content':base64.b64encode(json.dumps(record,separators=(',',':')).encode()).decode()}
    if SHAS[path]:body['sha']=SHAS[path]
    answer=api(uri,body,'PUT');SHAS[path]=answer['content']['sha'];return
   except urllib.error.HTTPError as e:

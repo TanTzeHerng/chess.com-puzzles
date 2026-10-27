@@ -33,7 +33,7 @@ void setup(const std::string&fen){
  std::array<char,64>b{};int rank=7,file=0;
  for(char c:pieces){if(c=='/'){if(file!=8||rank<=0)throw std::runtime_error("FEN width");--rank;file=0;}else if(c>='1'&&c<='8'){file+=c-'0';}else{if(file>=8||rank<0)throw std::runtime_error("FEN square");code(c);b[rank*8+file++]=c;}}
  if(rank!=0||file!=8)throw std::runtime_error("Incomplete FEN");
- m=F8("@embedded");m.run(4000000);m.level("999999");
+ m=F8("@embedded");m.run(4000000);m.level("009999");
  m.press(4,1); // FP, original machine's find-position mode
  for(char c:std::string("KQRRBBNNPPPPPPPPkqrrbbnnpppppppp")){symbol(c);m.press(3,8);}
  m.press(4,8);
@@ -44,12 +44,12 @@ void setup(const std::string&fen){
  for(int q=0;q<64;q++)if(m.ram[64+q]!=u8(code(b[q])))throw std::runtime_error("ROM board differs from FEN at square "+std::to_string(q));
  // At reset the machine plays Black; a Black setup move requires it to play White.
  if(turn=="b")m.press(4,4);
- std::cout<<"ready board_hex="<<boardhex()<<" computer_color="<<(m.regs[1]==0?"white":"black")<<" original_rom=unchanged level=999999\n"<<std::flush;
+ std::cout<<"ready board_hex="<<boardhex()<<" computer_color="<<(m.regs[1]==0?"white":"black")<<" original_rom=unchanged level=009999\n"<<std::flush;
 }
 void go(){
  auto start=std::chrono::steady_clock::now(),last=start,last_cp=start;uint64_t begin=m.cycles;
  std::string prior,answer;int stable=0;
- while(m.cycles-begin<2000000ull*(362439ull*4+120)){
+ while(m.cycles-begin<2000000ull*(6039ull*4+120)){
   m.run(20000);auto s=m.display();
   bool coord=s.size()==4&&s[0]>='a'&&s[0]<='h'&&s[1]>='1'&&s[1]<='8'&&s[2]>='a'&&s[2]<='h'&&s[3]>='1'&&s[3]<='8';
   if((m.regs[6]&8)&&coord){stable=s==prior?stable+1:0;prior=s;if(stable>=4){answer=s;break;}}else stable=0;
