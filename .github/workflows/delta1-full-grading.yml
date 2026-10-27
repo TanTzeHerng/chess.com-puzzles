@@ -16,14 +16,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: experiment/delta1-full-grading-20261027
+          ref: experiment/delta1-full-grading-reset-20261027
       - run: python3 -m pip install --quiet chess ijson
-      - run: python3 delta1_benchmark/prepare_sources.py
-      - uses: actions/upload-artifact@v4
-        with:
-          name: delta1-complete-sources
-          path: delta1_benchmark/sources.json
-          retention-days: 3
+      - name: Prepare the complete 2000-2500 dataset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view delta1-full-state-20261027T081416Z >/dev/null 2>&1 || gh release create delta1-full-state-20261027T081416Z --target experiment/delta1-full-grading-reset-20261027 --prerelease --title "Delta-1 full dataset run checkpoints" --notes "Automatic original-ROM puzzle-run sources and resumable CPU states."
+          mkdir -p /tmp/delta1-sources
+          if gh release download delta1-full-state-20261027T081416Z --pattern sources-full.json.gz --dir /tmp/delta1-sources --clobber; then
+            gzip -dc /tmp/delta1-sources/sources-full.json.gz >delta1_benchmark/sources.json
+          else
+            python3 delta1_benchmark/prepare_sources.py
+            gzip -9 -c delta1_benchmark/sources.json >/tmp/delta1-sources/sources-full.json.gz
+            gh release upload delta1-full-state-20261027T081416Z /tmp/delta1-sources/sources-full.json.gz --clobber
+          fi
   grade:
     needs: prepare
     strategy:
@@ -34,31 +41,28 @@ jobs:
     timeout-minutes: 350
     env:
       GH_TOKEN: ${{ github.token }}
-      DELTA_BRANCH: experiment/delta1-full-grading-20261027
+      DELTA_BRANCH: experiment/delta1-full-grading-reset-20261027
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: experiment/delta1-full-grading-20261027
+          ref: experiment/delta1-full-grading-reset-20261027
       - run: python3 -m pip install --quiet chess
-      - uses: actions/download-artifact@v4
-        with:
-          name: delta1-complete-sources
-          path: delta1_benchmark
+      - name: Load complete puzzle sources
+        run: |
+          mkdir -p /tmp/delta1-sources
+          gh release download delta1-full-state-20261027T081416Z --pattern sources-full.json.gz --dir /tmp/delta1-sources --clobber
+          gzip -dc /tmp/delta1-sources/sources-full.json.gz >delta1_benchmark/sources.json
       - name: Build unchanged-ROM emulator with verified keypad adapter
         run: g++ -std=c++17 -O3 -DNDEBUG -pthread delta1_benchmark/delta1_puzzle_engine.cpp -o delta1_benchmark/delta1_puzzle_engine
       - name: Restore previous emulated CPU checkpoints
         run: |
           mkdir -p delta1_benchmark/work
-          python3 delta1_benchmark/github_feed.py ${{ matrix.shard }} delta1_benchmark/work
+          python3 delta1_benchmark/checkpoint_release.py restore ${{ matrix.shard }} delta1_benchmark/work
       - name: Grade all solver moves in 64 distinct lanes
         run: python3 -u delta1_benchmark/cloud_grade.py --shard ${{ matrix.shard }} --budget 19500 --work delta1_benchmark/work
-      - uses: actions/upload-artifact@v4
+      - name: Save resumable CPU states and all raw grading logs
         if: always()
-        with:
-          name: delta1-full-checkpoint-v1-s${{ matrix.shard }}
-          path: delta1_benchmark/work
-          retention-days: 3
-          if-no-files-found: warn
+        run: python3 delta1_benchmark/checkpoint_release.py save ${{ matrix.shard }} delta1_benchmark/work
   continue:
     needs: grade
     if: always() && needs.grade.result == 'success'
@@ -66,11 +70,11 @@ jobs:
     timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
-      DELTA_BRANCH: experiment/delta1-full-grading-20261027
+      DELTA_BRANCH: experiment/delta1-full-grading-reset-20261027
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: experiment/delta1-full-grading-20261027
+          ref: experiment/delta1-full-grading-reset-20261027
       - name: Resume only if the verified run is unfinished
         run: |
           python3 - <<'PY'
