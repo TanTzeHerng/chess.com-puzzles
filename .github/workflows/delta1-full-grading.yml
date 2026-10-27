@@ -65,7 +65,7 @@ jobs:
         run: python3 delta1_benchmark/checkpoint_release.py save ${{ matrix.shard }} delta1_benchmark/work
   continue:
     needs: grade
-    if: always() && needs.grade.result == 'success'
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -84,9 +84,12 @@ jobs:
           import base64
           all_complete=True
           for shard in range(4):
-              p=api('contents/delta1_benchmark/progress/shard-'+str(shard)+'.json?ref='+urllib.parse.quote(BRANCH,safe=''))
-              d=json.loads(base64.b64decode(p['content']))
-              if d['state']!='completed':all_complete=False
+              try:
+                  p=api('contents/delta1_benchmark/progress/shard-'+str(shard)+'.json?ref='+urllib.parse.quote(BRANCH,safe=''))
+                  d=json.loads(base64.b64decode(p['content']))
+                  if d['state']!='completed':all_complete=False
+              except Exception:
+                  all_complete=False
           if not all_complete:
               subprocess.run(['gh','workflow','run','delta1-full-grading.yml','--repo',os.environ['GITHUB_REPOSITORY'],'--ref','main'],check=True)
           PY
