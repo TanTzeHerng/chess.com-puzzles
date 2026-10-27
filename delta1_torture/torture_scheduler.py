@@ -160,7 +160,13 @@ async def attempt(row,st,eng,worker):
    b=board_from_history(row,st)
    if b.castling_rights or b.ep_square is not None:
     raise RuntimeError('Unsafe rights in resumed solver position')
-   await command(eng,'setup '+b.fen(),'ready ',45)
+   ready=await command(eng,'setup '+b.fen(),'ready ',45)
+   setup_info=parse_info(ready)
+   if setup_info.get('board_hex')!=bh(b):
+    raise RuntimeError('ROM keypad setup failed independent 64-square verification')
+   expected_color='white' if b.turn==chess.WHITE else 'black'
+   if setup_info.get('computer_color')!=expected_color:
+    raise RuntimeError('ROM side-to-move setup mismatch')
   b=board_from_history(row,st)
   assert st['solver_index']<len(row['solutionUci'][::2])
   expected=row['solutionUci'][2*st['solver_index']]
