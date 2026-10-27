@@ -8,7 +8,7 @@ def preparation_heartbeat():
  from github_feed import publish
  while not DONE.is_set():
   for shard in range(4):
-   d={'schema':2,'epoch':'20261027T090152Z','run_id':'preparing','shard':shard,'heartbeat_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'level':'999999','initial_rating':2000,'initial_rd':350,'max_logical_workers':256,'actual_running_workers':0,'active':{},'eligible':0,'recent':[],'rating_bins':{},'counts':{'solved':0,'missed':0,'technical':0,'running':0,'queued':0},'state':'preparing','source_rows_scanned':SCANNED}
+   d={'schema':2,'epoch':'20261027T090152Z','run_id':'preparing','shard':shard,'heartbeat_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'level':'999999','initial_rating':2500,'initial_rd':350,'max_logical_workers':256,'actual_running_workers':0,'active':{},'eligible':0,'recent':[],'rating_bins':{},'counts':{'solved':0,'missed':0,'technical':0,'running':0,'queued':0},'state':'preparing','source_rows_scanned':SCANNED}
    try:publish(shard,d)
    except Exception as e:print('SOURCE_FEED_ERROR',repr(e),flush=True)
   DONE.wait(30)
