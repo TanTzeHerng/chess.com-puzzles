@@ -54,7 +54,10 @@ START=time.monotonic()
 STOP=False
 ACTIVE={}
 RUN_ID=os.environ.get('GITHUB_RUN_ID','local-testing')
-DONALD={'rating':2500.,'rd':350.,'events':0}
+DONALD={'rating':None,'rd':None,'events':0}
+BASELINE_SECONDS=99.0
+BASELINE_TOTAL=len(ROWS)
+
 def utc():return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
 def atom(p,data):
  p=pathlib.Path(p);t=p.with_suffix(p.suffix+'.tmp')
@@ -68,30 +71,51 @@ def glicko_event(r,rd,opponent,score):
  expected=1/(1+10**((opponent-r)/400))
  inv=1/(rd*rd)+q*q*expected*(1-expected)
  return r+(q*(score-expected))/inv,1/math.sqrt(inv)
+def qualifies(st):
+ # An early complete solve needs no more search; otherwise the actual,
+ # cumulatively executed search duration must reach >=99 seconds.
+ if st.get('status')=='solved':return True
+ return bool(st.get('attempted_at')) and float(st.get('total_emulated_seconds',0))>=BASELINE_SECONDS and st.get('status') not in ('technical','blocked')
 def rating_rows():
- # Each genuinely started puzzle is included exactly once, whether solved
- # or still unsolved. A later solve changes that one result from 0 to 1.
- # Merely queued or uninitialized/blocked FENs are never counted.
  out=[]
- for st in STATES.values():
-  did_search=bool(st.get('attempted_at') or st.get('attempts',0)>0
-      or st.get('matched_moves',0)>0 or st.get('total_emulated_seconds',0)>0)
-  if not did_search:continue
-  ident=int(st['id'])
-  row=SOURCE.get(str(ident))
-  if row is None:continue
-  at=st.get('attempted_at') or st.get('started_at') or st.get('updated_at') or EPOCH[:8]
-  score=int(st['status']=='solved')
-  out.append((ident,int(row['rating']),at,score,int(ident in CASTLING_220_IDS)))
- return sorted(out,key=lambda r:(r[2],r[0]))
+ for row in SHARD_ROWS:
+  st=STATES.get(str(row['id']))
+  if st is None or not qualifies(st):continue
+  out.append((int(row['id']),int(row['rating']),st.get('attempted_at') or st.get('started_at') or EPOCH[:8],
+    int(st['status']=='solved'),int(row['id'] in CASTLING_220_IDS)))
+ return sorted(out,key=lambda v:(v[2],v[0]))
+def baseline_progress():
+ eligible=sum(1 for row in SHARD_ROWS
+  if str(row['id']) in STATES and qualifies(STATES[str(row['id'])]))
+ solved=sum(1 for st in STATES.values() if st.get('status')=='solved')
+ blocked=sum(1 for st in STATES.values() if st.get('status')=='blocked')
+ technical=sum(1 for st in STATES.values() if st.get('status')=='technical')
+ return {'qualified':eligible,'total':len(SHARD_ROWS),
+  'pending':len(SHARD_ROWS)-eligible,'solved':solved,'blocked':blocked,
+  'technical':technical,'required_emulated_seconds_per_puzzle':BASELINE_SECONDS}
+def glicko_batch(rows):
+ # One Glicko-1 rating period with a fixed, identical set of puzzles.
+ # Its denominator and RD stay fixed as provisional failures flip to wins.
+ # This makes the resulting rating mathematically nondecreasing after the
+ # 99-second qualification is complete for ALL 19,492 puzzles.
+ r0,rd0=2500.,350.
+ q=math.log(10)/400.
+ inv=1/(rd0*rd0)
+ margin=0.
+ for ident,opponent,at,score,cohort in rows:
+  expected=1/(1+10**max(-8,min(8,(opponent-r0)/400)))
+  inv+=q*q*expected*(1-expected)
+  margin+=q*(score-expected)
+ return r0+margin/inv,1/math.sqrt(inv)
 def replay_rating():
- r,rd=2500.,350.
- all_rows=rating_rows()
- for ident,opponent,first_at,score,cohort in all_rows:
-  r,rd=glicko_event(r,rd,opponent,score)
- DONALD.update(rating=r,rd=rd,events=len(all_rows),
-  wins=sum(r[3] for r in all_rows),
-  provisional_failures=sum(1-r[3] for r in all_rows))
+ rows=rating_rows()
+ # Local shard numbers are only a progress diagnostic. They are NEVER
+ # presented as the global Donaldtrumpo rating before all 19,492 qualify.
+ rating,rd=(glicko_batch(rows) if rows else (None,None))
+ DONALD.update(rating=rating,rd=rd,events=len(rows),
+  wins=sum(x[3] for x in rows),
+  provisional_failures=sum(1-x[3] for x in rows),
+  baseline=baseline_progress())
 replay_rating()
 def statefile(ident):return WORK/('puzzle-'+str(ident)+'.json')
 def binfile(ident):return WORK/('puzzle-'+str(ident)+'.f8')
@@ -167,7 +191,7 @@ def reopen_castling_220():
   'all_220_ids':sorted(CASTLING_220_IDS),
   'shard_ids':SHARD_CASTLING_IDS,
   'illegal_castle_candidate_policy':'ordinary unsolved candidate; no technical error; no rating loss',
-  'rating_inclusion':'successful puzzles in cohort included in Donaldtrumpo',
+  'rating_inclusion':'After 99s qualifying phase all 220 cohort puzzles included; provisional unsolved 0, solved 1',
   'updated_at':utc()})
  print('CASTLING_220_REOPENED',reopened,'SHARD_COHORT',len(SHARD_CASTLING_IDS),flush=True)
 def make_state(row):
@@ -190,12 +214,15 @@ def snapshot():
  count=collections.Counter(x['status'] for x in STATES.values())
  total_s=sum(x.get('total_emulated_seconds',0) for x in STATES.values())
  return {'schema':1,'experiment':'puzzle torture','rating_name':'Donaldtrumpo',
-  'glicko_variant':'Glicko-1, one current result per attempted puzzle: unsolved=0 and fully solved=1; chronological first attempt order, one trial per period, puzzle RD=0',
+  'glicko_variant':'Glicko-1 single rating period for all 19492 puzzles after each has searched >=99 emulated seconds (or solved earlier); provisional failures become wins, fixed field, monotone rating',
   'epoch':EPOCH,'run_id':RUN_ID,'shard':A.shard,'heartbeat_utc':utc(),
   'state':'running' if not STOP else 'between_runners',
   'rom_patch':'0x0d2c:5c=>2b','level':'999999','total_eligible':len(ROWS),
   'shard_puzzles':len(SHARD_ROWS),'rated':DONALD,
   'rating_outcomes':outcomes,
+  'baseline_99':baseline_progress(),
+  'qualification_seconds':BASELINE_SECONDS,
+  'rating_protocol_version':'torture-99-second-full-cohort-batch-Glicko1',
   'rated_attempted':len(outcomes),
   'provisional_failures':sum(1-r[3] for r in outcomes),
   'castling_220_ids':SHARD_CASTLING_IDS,
@@ -288,7 +315,14 @@ async def attempt(row,st,eng,worker):
   assert st['solver_index']<len(row['solutionUci'][::2])
   expected=row['solutionUci'][2*st['solver_index']]
   await command(eng,'watch '+expected,'watching ',20)
-  seconds=min(3600,max(30,int(st['next_slice_seconds'])))
+  # Give every puzzle its qualifying exposure before spending more time on
+  # puzzles that already exceeded 99 seconds. Use an exact 99s first slice;
+  # for checkpointed work, search only the actual remaining qualification.
+  remaining=max(0.,BASELINE_SECONDS-float(st.get('total_emulated_seconds',0)))
+  if remaining>0:
+   seconds=round(remaining,4)
+  else:
+   seconds=min(3600,max(30,int(st['next_slice_seconds'])))
   ACTIVE[worker]={'id':ident,'puzzle_rating':row['rating'],'slice_seconds':seconds,
     'cumulative_seconds':st['total_emulated_seconds'],'updated_at':utc(),
     'stage':'searching','solver_index':st['solver_index']}
@@ -299,6 +333,8 @@ async def attempt(row,st,eng,worker):
   if not 0<spent<=seconds*1.02+1:raise RuntimeError('Incorrect emulator time accounting: '+str((seconds,spent)))
   st['total_emulated_seconds']+=spent
   st['move_emulated_seconds']+=spent
+  if st['total_emulated_seconds']>=BASELINE_SECONDS:
+   st['qualified_at']=st.get('qualified_at') or utc()
   hit=info.get('flash_seen')=='1'
   st['attempts']+=1
   st['last_probe']=expected if hit else None
@@ -422,8 +458,12 @@ async def main():
   st=STATES.get(str(row['id']))
   if st and st['status'] in ('solved','blocked','technical'):continue
   entries.append((st['updated_at'] if st else '',row['index'],row['id']))
- for _,__,ident in sorted(entries):q.put_nowait(ident)
- print('PUZZLE_TORTURE_START',A.shard,len(entries),'workers',A.workers,'saved_state',len(STATES),flush=True)
+ # Prioritize never-qualified puzzles; long-running search states retain
+  # every CPU/RAM/timer bit and resume later.
+ entries.sort(key=lambda z:(int(bool(STATES.get(str(z[2])) and qualifies(STATES[str(z[2])]))),z[0],z[1]))
+ for _,__,ident in entries:q.put_nowait(ident)
+ print('PUZZLE_TORTURE_START',A.shard,len(entries),'workers',A.workers,'saved_state',len(STATES),
+   'BASELINE_99',baseline_progress(),flush=True)
  if A.dry_run:
   print(json.dumps(snapshot()));return
  watchers=asyncio.create_task(monitor(deadline))
