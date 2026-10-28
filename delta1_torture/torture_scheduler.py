@@ -68,11 +68,30 @@ def glicko_event(r,rd,opponent,score):
  expected=1/(1+10**((opponent-r)/400))
  inv=1/(rd*rd)+q*q*expected*(1-expected)
  return r+(q*(score-expected))/inv,1/math.sqrt(inv)
+def rating_rows():
+ # Each genuinely started puzzle is included exactly once, whether solved
+ # or still unsolved. A later solve changes that one result from 0 to 1.
+ # Merely queued or uninitialized/blocked FENs are never counted.
+ out=[]
+ for st in STATES.values():
+  did_search=bool(st.get('attempted_at') or st.get('attempts',0)>0
+      or st.get('matched_moves',0)>0 or st.get('total_emulated_seconds',0)>0)
+  if not did_search:continue
+  ident=int(st['id'])
+  row=SOURCE.get(str(ident))
+  if row is None:continue
+  at=st.get('attempted_at') or st.get('started_at') or st.get('updated_at') or EPOCH[:8]
+  score=int(st['status']=='solved')
+  out.append((ident,int(row['rating']),at,score,int(ident in CASTLING_220_IDS)))
+ return sorted(out,key=lambda r:(r[2],r[0]))
 def replay_rating():
  r,rd=2500.,350.
- for e in sorted(EVENTS.values(),key=lambda x:(x['utc'],x['event_id'])):
-  r,rd=glicko_event(r,rd,e['puzzle_rating'],e['score'])
- DONALD.update(rating=r,rd=rd,events=len(EVENTS))
+ all_rows=rating_rows()
+ for ident,opponent,first_at,score,cohort in all_rows:
+  r,rd=glicko_event(r,rd,opponent,score)
+ DONALD.update(rating=r,rd=rd,events=len(all_rows),
+  wins=sum(r[3] for r in all_rows),
+  provisional_failures=sum(1-r[3] for r in all_rows))
 replay_rating()
 def statefile(ident):return WORK/('puzzle-'+str(ident)+'.json')
 def binfile(ident):return WORK/('puzzle-'+str(ident)+'.f8')
@@ -158,7 +177,7 @@ def make_state(row):
    'next_slice_seconds':30,'attempts':0,'matched_moves':0,
    'last_probe':None,'technical_errors':0,'error':None,
    'historically_ambiguous_castling_220':row['id'] in CASTLING_220_IDS,
-   'updated_at':utc(),'started_at':utc()}
+   'updated_at':utc(),'started_at':utc(),'attempted_at':None}
 def recent_results(limit=20):
  return sorted(({'id':x['id'],'rating':x['rating'],'status':x['status'],
    'elapsed':x['total_emulated_seconds'],'attempts':x['attempts'],
@@ -166,14 +185,19 @@ def recent_results(limit=20):
    'updated_at':x['updated_at']} for x in STATES.values()),
    key=lambda v:(v['updated_at'],v['id']),reverse=True)[:limit]
 def snapshot():
+ replay_rating()
+ outcomes=rating_rows()
  count=collections.Counter(x['status'] for x in STATES.values())
- total_s=sum(x['total_emulated_seconds'] for x in STATES.values())
+ total_s=sum(x.get('total_emulated_seconds',0) for x in STATES.values())
  return {'schema':1,'experiment':'puzzle torture','rating_name':'Donaldtrumpo',
-  'glicko_variant':'Glicko-1, wins-only completed puzzles, one trial per rating period, puzzle RD=0',
+  'glicko_variant':'Glicko-1, one current result per attempted puzzle: unsolved=0 and fully solved=1; chronological first attempt order, one trial per period, puzzle RD=0',
   'epoch':EPOCH,'run_id':RUN_ID,'shard':A.shard,'heartbeat_utc':utc(),
   'state':'running' if not STOP else 'between_runners',
   'rom_patch':'0x0d2c:5c=>2b','level':'999999','total_eligible':len(ROWS),
   'shard_puzzles':len(SHARD_ROWS),'rated':DONALD,
+  'rating_outcomes':outcomes,
+  'rated_attempted':len(outcomes),
+  'provisional_failures':sum(1-r[3] for r in outcomes),
   'castling_220_ids':SHARD_CASTLING_IDS,
   'castling_220_status':{str(k):STATES[str(k)]['status'] for k in SHARD_CASTLING_IDS if str(k) in STATES},
   'counts':{'solved':count['solved'],'blocked':count['blocked'],
@@ -195,16 +219,19 @@ async def write_event(row,st,score,actual):
    event={'event_id':event_id,'id':row['id'],'solver_index':st['solver_index'],
     'puzzle_rating':row['rating'],'score':score,'actual':actual,
     'historically_ambiguous_castling_220':int(row['id']) in CASTLING_220_IDS,
+    'rating_protocol':'torture v2: one provisional failure per attempted unsolved puzzle; solve replaces failure',
     'utc':utc(),'elapsed':st['total_emulated_seconds']}
    ordered_times=sorted(float(x['elapsed']) for x in EVENTS.values())
    event['time_distribution_rank']=bisect.bisect_right(ordered_times,float(event['elapsed']))
    event['time_distribution_count']=len(ordered_times)+1
-   next_rating,next_rd=glicko_event(DONALD['rating'],DONALD['rd'],event['puzzle_rating'],1)
-   event['donaldtrumpo_rating_after']=next_rating
-   event['donaldtrumpo_rd_after']=next_rd
+   # Recording a win changes one provisional failure into a success.
+   # Rating is recomputed over every currently attempted puzzle; shard-only
+   # ratings are advisory. The PC dashboard merges all four shards.
    with LEDGER.open('a',encoding='utf8') as f:f.write(json.dumps(event,separators=(',',':'))+'\n')
    EVENTS[event_id]=event
    replay_rating()
+   event['shard_donaldtrumpo_rating_after']=DONALD['rating']
+   event['shard_donaldtrumpo_rd_after']=DONALD['rd']
    # Exact sorted distribution at this solve; event ledger is its lossless history.
    atom(WORK/'sorted_distribution_latest.json',{'utc':event['utc'],'rating_name':'Donaldtrumpo',
     'donaldtrumpo':DONALD.copy(),'emulated_seconds_ascending':sorted(ordered_times+[float(event['elapsed'])])})
@@ -250,6 +277,13 @@ async def attempt(row,st,eng,worker):
    if setup_info.get('computer_color')!=expected_color:
     raise RuntimeError('ROM side-to-move setup mismatch')
    await command(eng,'play '+last,'played ',45)
+   if not st.get('attempted_at'):
+    st['attempted_at']=utc()
+    atom(statefile(ident),st)
+  if not st.get('attempted_at'):
+   # Old exact F8 checkpoints already contain active chess search.
+   st['attempted_at']=st.get('started_at') or utc()
+   atom(statefile(ident),st)
   b=board_from_history(row,st)
   assert st['solver_index']<len(row['solutionUci'][::2])
   expected=row['solutionUci'][2*st['solver_index']]
@@ -307,7 +341,10 @@ async def worker_task(index,queue,deadline):
    row=SOURCE[str(ident)]
    st=STATES.get(str(ident))
    if st is None:
-    try:source_check(row);st=make_state(row)
+    try:
+     source_check(row);st=make_state(row)
+     STATES[str(ident)]=st
+     atom(statefile(ident),st)
     except Exception as e:
      st={'id':ident,'rating':row['rating'],'status':'blocked','error':str(e),
        'updated_at':utc(),'total_emulated_seconds':0,'attempts':0,'matched_moves':0}
@@ -366,6 +403,7 @@ async def main():
   if st.get('status')!='searching' or st.get('search_initialized'):continue
   if st.get('matched_moves',0):continue
   st['legacy_idle_seconds']=st.get('total_emulated_seconds',0)
+  st['attempted_at']=None
   st['total_emulated_seconds']=0
   st['move_emulated_seconds']=0
   st['attempts']=0
