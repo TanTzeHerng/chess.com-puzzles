@@ -3,6 +3,7 @@ Only this experiment's standalone ROM is used. Full F8 state persists per puzzle
 """
 import argparse,asyncio,collections,datetime,json,math,os,pathlib,time,zipfile,subprocess,urllib.request,base64,bisect
 import chess
+import itertools
 from position_trigger import trigger_for
 
 P=argparse.ArgumentParser()
@@ -55,6 +56,7 @@ START=time.monotonic()
 STOP=False
 ACTIVE={}
 RUN_ID=os.environ.get('GITHUB_RUN_ID','local-testing')
+QUEUE_SERIAL=itertools.count()
 DONALD={'rating':None,'rd':None,'events':0}
 BASELINE_SECONDS=99.0
 BASELINE_TOTAL=len(ROWS)
@@ -412,7 +414,7 @@ async def worker_task(index,queue,deadline):
  eng=await new_engine()
  try:
   while time.monotonic()<deadline:
-   try:ident=queue.get_nowait()
+   try:_,__,ident=queue.get_nowait()
    except asyncio.QueueEmpty:break
    row=SOURCE[str(ident)]
    st=STATES.get(str(ident))
@@ -441,7 +443,7 @@ async def worker_task(index,queue,deadline):
     except ProcessLookupError:pass
     eng=await new_engine()
    if st['status']=='searching':
-    queue.put_nowait(ident)
+    queue.put_nowait((0 if not qualifies(st) else 1,next(QUEUE_SERIAL),ident))
    queue.task_done()
  finally:
   if eng.returncode is None:
@@ -492,7 +494,7 @@ async def main():
   atom(statefile(st['id']),st)
   repaired+=1
  print('INVALID_IDLE_STATES_REINITIALIZED',repaired,flush=True)
- q=asyncio.Queue()
+ q=asyncio.PriorityQueue()
  entries=[]
  for row in SHARD_ROWS:
   st=STATES.get(str(row['id']))
@@ -501,7 +503,9 @@ async def main():
  # Prioritize never-qualified puzzles; long-running search states retain
   # every CPU/RAM/timer bit and resume later.
  entries.sort(key=lambda z:(int(bool(STATES.get(str(z[2])) and qualifies(STATES[str(z[2])]))),z[0],z[1]))
- for _,__,ident in entries:q.put_nowait(ident)
+ for _,__,ident in entries:
+  st=STATES.get(str(ident))
+  q.put_nowait((0 if st is None or not qualifies(st) else 1,next(QUEUE_SERIAL),ident))
  print('PUZZLE_TORTURE_START',A.shard,len(entries),'workers',A.workers,'saved_state',len(STATES),
    'BASELINE_99',baseline_progress(),flush=True)
  if A.dry_run:
