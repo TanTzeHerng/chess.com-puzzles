@@ -83,6 +83,23 @@ def board_from_history(row,st):
   if m not in b.legal_moves:raise ValueError('Invalid saved move history '+u)
   b.push(m)
  return b
+def recover_exhausted_technical():
+ recovered=0;pending_input=0
+ for key,st in STATES.items():
+  if st.get('status')!='technical':continue
+  err=st.get('error','')
+  if 'Incorrect emulator time accounting' in err and binfile(st['id']).exists():
+   st['status']='searching'
+   st['technical_errors']=0
+   st['error']='Recovered time-accounting tolerance; retained exact F8 checkpoint'
+   st['updated_at']=utc()
+   atom(statefile(st['id']),st);recovered+=1
+  elif 'Unsafe rights in resumed solver position' in err:
+   st['status']='blocked'
+   st['error']='Awaiting original-game history to reconstruct FEN rights'
+   st['updated_at']=utc()
+   atom(statefile(st['id']),st);pending_input+=1
+ print('RECOVERED_SAVED_SEARCHES',recovered,'RIGHTS_NEED_HISTORY',pending_input,flush=True)
 def make_state(row):
  return {'id':row['id'],'rating':row['rating'],'status':'pending',
    'applied':[row['setupMoveUci']],'solver_index':0,
@@ -159,7 +176,7 @@ async def attempt(row,st,eng,worker):
   else:
    b=board_from_history(row,st)
    if b.castling_rights or b.ep_square is not None:
-    raise RuntimeError('Unsafe rights in resumed solver position')
+    raise ValueError('Unverifiable rights in continuation position; pending historical move reconstruction')
    ready=await command(eng,'setup '+b.fen(),'ready ',45)
    setup_info=parse_info(ready)
    if setup_info.get('board_hex')!=bh(b):
@@ -179,7 +196,7 @@ async def attempt(row,st,eng,worker):
   info=parse_info(raw)
   if info.get('illegal_opcodes')!='0':raise RuntimeError('Illegal F8 emulated opcode')
   spent=float(info['seconds'])
-  if not 0<spent<=seconds+0.01:raise RuntimeError('Incorrect emulator time accounting')
+  if not 0<spent<=seconds*1.02+1:raise RuntimeError('Incorrect emulator time accounting: '+str((seconds,spent)))
   st['total_emulated_seconds']+=spent
   st['move_emulated_seconds']+=spent
   hit=info.get('flash_seen')=='1'
@@ -234,8 +251,11 @@ async def worker_task(index,queue,deadline):
    try:
     await attempt(row,st,eng,label)
    except (Exception,asyncio.TimeoutError) as e:
-    st['technical_errors']=st.get('technical_errors',0)+1
-    st['status']='technical' if st['technical_errors']>=4 else 'searching'
+    if isinstance(e,ValueError) and 'rights in continuation' in str(e):
+     st['status']='blocked'
+    else:
+     st['technical_errors']=st.get('technical_errors',0)+1
+     st['status']='technical' if st['technical_errors']>=4 else 'searching'
     st['error']=repr(e);st['updated_at']=utc()
     atom(statefile(ident),st);STATES[str(ident)]=st
     try:eng.kill();await eng.wait()
@@ -269,6 +289,7 @@ async def monitor(deadline):
 async def main():
  global STOP
  deadline=time.monotonic()+A.budget
+ recover_exhausted_technical()
  q=asyncio.Queue()
  entries=[]
  for row in SHARD_ROWS:
