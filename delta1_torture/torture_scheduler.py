@@ -20,6 +20,21 @@ if os.name=='nt':EXE=ROOT/'torture_engine.exe'
 ROWS=json.loads((ROOT/'sources.json').read_text())
 SHARD_ROWS=[x for x in ROWS if x['index']%4==A.shard]
 SOURCE={str(x['id']):x for x in SHARD_ROWS}
+def ambiguous_historical_castling(row):
+ # The original FEN has no castling rights, but a king and one of its
+ # home rooks are still on their starting squares. Delta-1 may castle
+ # illegally; that is an ordinary failed candidate, not a technical error.
+ if row.get('source_error'):return False
+ b=chess.Board(row['initialFen'])
+ if b.castling_rights or b.ep_square is not None:return False
+ return any(
+   b.king(color)==(chess.E1 if color else chess.E8)
+   and any(b.piece_at(sq)==chess.Piece(chess.ROOK,color)
+    for sq in ((chess.A1,chess.H1) if color else (chess.A8,chess.H8)))
+   for color in (chess.WHITE,chess.BLACK))
+CASTLING_220_IDS=frozenset(int(row['id']) for row in ROWS if ambiguous_historical_castling(row))
+if len(CASTLING_220_IDS)!=220:raise RuntimeError('Castling ambiguity cohort changed: '+str(len(CASTLING_220_IDS)))
+SHARD_CASTLING_IDS=sorted(int(row['id']) for row in SHARD_ROWS if int(row['id']) in CASTLING_220_IDS)
 STATES={}
 for f in WORK.glob('puzzle-*.json'):
  try:
@@ -69,12 +84,15 @@ def source_check(row):
  if b.castling_rights or b.ep_square is not None:raise ValueError('Unverifiable FEN castle/EP rights')
  for color in (chess.WHITE,chess.BLACK):
   home=chess.E1 if color else chess.E8
-  if b.king(color)==home and any(b.piece_at(q)==chess.Piece(chess.ROOK,color) for q in ((chess.A1,chess.H1) if color else (chess.A8,chess.H8))):
-   raise ValueError('Ambiguous FEN rights: unmoved king and rook')
+  # These 220 positions are now explicitly eligible even if their
+  # king and rook occupy the home squares without castling rights.
+  # An illegal ROM castling candidate does not become a technical error.
+  pass
  for u in [row['setupMoveUci']]+row['solutionUci']:
   move=chess.Move.from_uci(u)
   if move not in b.legal_moves:raise ValueError('Illegal scripted source move '+u)
-  if len(u)!=4:raise ValueError('Underpromotion/promotion adapter not verified for torture')
+  if len(u)!=4 and int(row['id']) not in CASTLING_220_IDS:
+   raise ValueError('Underpromotion/promotion adapter not verified for torture')
   b.push(move)
 def board_from_history(row,st):
  b=chess.Board(row['initialFen'])
@@ -100,12 +118,37 @@ def recover_exhausted_technical():
    st['updated_at']=utc()
    atom(statefile(st['id']),st);pending_input+=1
  print('RECOVERED_SAVED_SEARCHES',recovered,'RIGHTS_NEED_HISTORY',pending_input,flush=True)
+def reopen_castling_220():
+ reopened=0
+ for ident in SHARD_CASTLING_IDS:
+  key=str(ident)
+  old=STATES.get(key)
+  if old and old.get('status')=='blocked' and old.get('error')=='Ambiguous FEN rights: unmoved king and rook':
+   st=make_state(SOURCE[key])
+   st['previous_block_reason']=old['error']
+   st['reopened_at']=utc()
+   st['historically_ambiguous_castling_220']=True
+   STATES[key]=st
+   binfile(ident).unlink(missing_ok=True)
+   atom(statefile(ident),st)
+   reopened+=1
+ # A durable cohort manifest allows retrospective Donaldtrumpo
+ # recalculation with or without all of these puzzles.
+ atom(WORK/'castling_220_manifest.json',{
+  'cohort':'220 home-square historical-castling ambiguity puzzles',
+  'all_220_ids':sorted(CASTLING_220_IDS),
+  'shard_ids':SHARD_CASTLING_IDS,
+  'illegal_castle_candidate_policy':'ordinary unsolved candidate; no technical error; no rating loss',
+  'rating_inclusion':'successful puzzles in cohort included in Donaldtrumpo',
+  'updated_at':utc()})
+ print('CASTLING_220_REOPENED',reopened,'SHARD_COHORT',len(SHARD_CASTLING_IDS),flush=True)
 def make_state(row):
  return {'id':row['id'],'rating':row['rating'],'status':'pending',
    'applied':[row['setupMoveUci']],'solver_index':0,
    'total_emulated_seconds':0,'move_emulated_seconds':0,
    'next_slice_seconds':30,'attempts':0,'matched_moves':0,
    'last_probe':None,'technical_errors':0,'error':None,
+   'historically_ambiguous_castling_220':row['id'] in CASTLING_220_IDS,
    'updated_at':utc(),'started_at':utc()}
 def recent_results(limit=20):
  return sorted(({'id':x['id'],'rating':x['rating'],'status':x['status'],
@@ -122,6 +165,8 @@ def snapshot():
   'state':'running' if not STOP else 'between_runners',
   'rom_patch':'0x0d2c:5c=>2b','level':'999999','total_eligible':len(ROWS),
   'shard_puzzles':len(SHARD_ROWS),'rated':DONALD,
+  'castling_220_ids':SHARD_CASTLING_IDS,
+  'castling_220_status':{str(k):STATES[str(k)]['status'] for k in SHARD_CASTLING_IDS if str(k) in STATES},
   'counts':{'solved':count['solved'],'blocked':count['blocked'],
    'technical':count['technical'],'in_rotation':count['pending']+count['searching'],
    'touched':len(STATES),'never_started':len(SHARD_ROWS)-len(STATES),
@@ -140,6 +185,7 @@ async def write_event(row,st,score,actual):
   if event_id not in EVENTS:
    event={'event_id':event_id,'id':row['id'],'solver_index':st['solver_index'],
     'puzzle_rating':row['rating'],'score':score,'actual':actual,
+    'historically_ambiguous_castling_220':int(row['id']) in CASTLING_220_IDS,
     'utc':utc(),'elapsed':st['total_emulated_seconds']}
    ordered_times=sorted(float(x['elapsed']) for x in EVENTS.values())
    event['time_distribution_rank']=bisect.bisect_right(ordered_times,float(event['elapsed']))
@@ -299,6 +345,7 @@ async def main():
  global STOP
  deadline=time.monotonic()+A.budget
  recover_exhausted_technical()
+ reopen_castling_220()
  # All V1 states were created from FP/EP board placement without playing
  # the setup move. The ROM did not enter chess search. Preserve the old release
  # checkpoints as evidence, but discard their non-searching F8 states and
