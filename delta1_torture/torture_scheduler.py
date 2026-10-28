@@ -174,16 +174,25 @@ async def attempt(row,st,eng,worker):
    # Checkpoint restores all F8 CPU, ROM, timer and search registers. Never
    # restart a hard puzzle's current solver move from the beginning.
   else:
+   # FP/EP only places pieces; it does NOT start chess search.
+   # Reconstruct the position BEFORE the most recent scripted move, and
+   # enter that move via real keypad to launch Delta-1 search.
    b=board_from_history(row,st)
-   if b.castling_rights or b.ep_square is not None:
+   before=chess.Board(row['initialFen'])
+   for u in st['applied'][:-1]:before.push_uci(u)
+   last=st['applied'][-1]
+   test=before.copy();test.push_uci(last)
+   if test.fen()!=b.fen():raise RuntimeError('Scripted last-move FEN mismatch')
+   if before.castling_rights or before.ep_square is not None:
     raise ValueError('Unverifiable rights in continuation position; pending historical move reconstruction')
-   ready=await command(eng,'setup '+b.fen(),'ready ',45)
+   ready=await command(eng,'setup '+before.fen(),'ready ',45)
    setup_info=parse_info(ready)
-   if setup_info.get('board_hex')!=bh(b):
+   if setup_info.get('board_hex')!=bh(before):
     raise RuntimeError('ROM keypad setup failed independent 64-square verification')
-   expected_color='white' if b.turn==chess.WHITE else 'black'
+   expected_color='white' if before.turn==chess.WHITE else 'black'
    if setup_info.get('computer_color')!=expected_color:
     raise RuntimeError('ROM side-to-move setup mismatch')
+   await command(eng,'play '+last,'played ',45)
   b=board_from_history(row,st)
   assert st['solver_index']<len(row['solutionUci'][::2])
   expected=row['solutionUci'][2*st['solver_index']]
@@ -290,6 +299,27 @@ async def main():
  global STOP
  deadline=time.monotonic()+A.budget
  recover_exhausted_technical()
+ # All V1 states were created from FP/EP board placement without playing
+ # the setup move. The ROM did not enter chess search. Preserve the old release
+ # checkpoints as evidence, but discard their non-searching F8 states and
+ # reset the invalid accumulated chess-search durations.
+ repaired=0
+ for k,st in STATES.items():
+  if st.get('status')!='searching' or st.get('search_initialized'):continue
+  if st.get('matched_moves',0):continue
+  st['legacy_idle_seconds']=st.get('total_emulated_seconds',0)
+  st['total_emulated_seconds']=0
+  st['move_emulated_seconds']=0
+  st['attempts']=0
+  st['technical_errors']=0
+  st['next_slice_seconds']=30
+  st['error']=None
+  st['search_initialized']=True
+  st['updated_at']=utc()
+  binfile(st['id']).unlink(missing_ok=True)
+  atom(statefile(st['id']),st)
+  repaired+=1
+ print('INVALID_IDLE_STATES_REINITIALIZED',repaired,flush=True)
  q=asyncio.Queue()
  entries=[]
  for row in SHARD_ROWS:
