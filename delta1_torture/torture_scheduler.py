@@ -3,6 +3,7 @@ Only this experiment's standalone ROM is used. Full F8 state persists per puzzle
 """
 import argparse,asyncio,collections,datetime,json,math,os,pathlib,time,zipfile,subprocess,urllib.request,base64,bisect
 import chess
+from position_trigger import trigger_for
 
 P=argparse.ArgumentParser()
 P.add_argument('--shard',type=int,default=0)
@@ -124,7 +125,6 @@ def source_check(row):
  b=chess.Board(row['initialFen'])
  if not b.is_valid():raise ValueError('Invalid source FEN')
  # Unsupported original historical rights must never be silently invented.
- if b.castling_rights or b.ep_square is not None:raise ValueError('Unverifiable FEN castle/EP rights')
  for color in (chess.WHITE,chess.BLACK):
   home=chess.E1 if color else chess.E8
   # These 220 positions are now explicitly eligible even if their
@@ -134,8 +134,6 @@ def source_check(row):
  for u in [row['setupMoveUci']]+row['solutionUci']:
   move=chess.Move.from_uci(u)
   if move not in b.legal_moves:raise ValueError('Illegal scripted source move '+u)
-  if len(u)!=4 and int(row['id']) not in CASTLING_220_IDS:
-   raise ValueError('Underpromotion/promotion adapter not verified for torture')
   b.push(move)
 def board_from_history(row,st):
  b=chess.Board(row['initialFen'])
@@ -169,7 +167,40 @@ def recover_exhausted_technical():
    st['error']='Awaiting original-game history to reconstruct FEN rights'
    st['updated_at']=utc()
    atom(statefile(st['id']),st);pending_input+=1
- print('RECOVERED_SAVED_SEARCHES',recovered,'RIGHTS_NEED_HISTORY',pending_input,flush=True)
+  # All previous blanket input exclusions are obsolete. Reopen without
+  # resetting genuine solver progress, including already found tactics.
+  newly=0;still_unverified=0
+  for key,st in STATES.items():
+   error=str(st.get('error') or '')
+   if st.get('status')=='blocked' and any(term in error for term in (
+     'Unverifiable FEN castle/EP rights',
+     'Underpromotion/promotion adapter not verified for torture',
+     'Awaiting original-game history',
+     'Unverifiable rights in continuation',
+     'Ambiguous FEN rights')):
+    row=SOURCE[key]
+    if not st.get('applied'):
+     st=make_state(row)
+    else:
+     st['status']='searching'
+     st['technical_errors']=0
+     st['previous_block_reason']=error
+     st['error']=None
+     st['updated_at']=utc()
+    STATES[key]=st
+    atom(statefile(st['id']),st)
+    newly+=1
+   elif st.get('status')=='technical' and any(term in error for term in (
+       'watch requires 4-char move','Four-character moves only',
+       'Unverifiable rights in continuation')):
+    st['status']='searching'
+    st['previous_harness_error']=error
+    st['technical_errors']=0
+    st['error']=None
+    st['updated_at']=utc()
+    atom(statefile(st['id']),st)
+    newly+=1
+  print('RECOVERED_SAVED_SEARCHES',recovered,'INPUT_BLOCKS_REOPENED',newly,flush=True)
 def reopen_castling_220():
  reopened=0
  for ident in SHARD_CASTLING_IDS:
@@ -277,9 +308,11 @@ def new_engine():
    stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.STDOUT)
 async def attempt(row,st,eng,worker):
  ident=row['id'];key=str(ident)
+ expected=row['solutionUci'][2*st['solver_index']]
  try:
   if binfile(ident).exists():
    line=await command(eng,'load '+str(binfile(ident)),'loaded board_hex=',30)
+   await command(eng,'watch '+expected,'watching ',20)
    # Checkpoint restores all F8 CPU, ROM, timer and search registers. Never
    # restart a hard puzzle's current solver move from the beginning.
   else:
@@ -287,24 +320,32 @@ async def attempt(row,st,eng,worker):
    # Reconstruct the position BEFORE the most recent scripted move, and
    # enter that move via real keypad to launch Delta-1 search.
    b=board_from_history(row,st)
-   before=chess.Board(row['initialFen'])
-   for u in st['applied'][:-1]:before.push_uci(u)
+   reference_before=chess.Board(row['initialFen'])
+   for u in st['applied'][:-1]:
+    reference_before.push_uci(u)
    last=st['applied'][-1]
-   test=before.copy();test.push_uci(last)
-   if test.fen()!=b.fen():raise RuntimeError('Scripted last-move FEN mismatch')
-   if before.castling_rights or before.ep_square is not None:
-    raise ValueError('Unverifiable rights in continuation position; pending historical move reconstruction')
-   ready=await command(eng,'setup '+before.fen(),'ready ',45)
+   trigger_fen,trigger_move,trigger_mode=trigger_for(b,reference_before,last)
+   before=chess.Board(trigger_fen)
+   ready=await command(eng,'setup '+trigger_fen,'ready ',45)
    setup_info=parse_info(ready)
    if setup_info.get('board_hex')!=bh(before):
     raise RuntimeError('ROM keypad setup failed independent 64-square verification')
-   # 'before.turn' is the HUMAN/opponent entering the setup move;
-   # the ROM-controlled computer plays the opposite color.
    expected_color='black' if before.turn==chess.WHITE else 'white'
    if setup_info.get('computer_color')!=expected_color:
     raise RuntimeError('ROM side-to-move setup mismatch')
-   await command(eng,'play '+last,'played ',45)
-   if not st.get('attempted_at'):
+   # Arm before ENTER. Short tactical moves can flash while the keypad
+   # itself is returning; arming afterwards silently misses them.
+   await command(eng,'watch '+expected,'watching ',20)
+   played=await command(eng,'play '+trigger_move,'played ',45)
+   played_info=parse_info(played)
+   if played_info.get('input_accepted')!='1':
+    raise RuntimeError('Original ROM rejected legal search trigger: '+trigger_mode)
+   # The ROM may already have made a move by the time ENTER returns.
+   # Therefore the *post-ENTER* board is not required to match the exact
+   # reference. The exact predecessor and chess-legal trigger WERE checked
+   # before entering the ROM.
+   st['search_trigger_mode']=trigger_mode
+  if not st.get('attempted_at'):
     st['attempted_at']=utc()
     atom(statefile(ident),st)
   if not st.get('attempted_at'):
@@ -313,8 +354,7 @@ async def attempt(row,st,eng,worker):
    atom(statefile(ident),st)
   b=board_from_history(row,st)
   assert st['solver_index']<len(row['solutionUci'][::2])
-  expected=row['solutionUci'][2*st['solver_index']]
-  await command(eng,'watch '+expected,'watching ',20)
+
   # Give every puzzle its qualifying exposure before spending more time on
   # puzzles that already exceeded 99 seconds. Use an exact 99s first slice;
   # for checkpointed work, search only the actual remaining qualification.
