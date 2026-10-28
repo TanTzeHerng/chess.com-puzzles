@@ -192,7 +192,7 @@ def recover_exhausted_technical():
     newly+=1
    elif st.get('status')=='technical' and any(term in error for term in (
        'watch requires 4-char move','Four-character moves only',
-       'Unverifiable rights in continuation')):
+       'Unverifiable rights in continuation','Invalid slice seconds')):
     st['status']='searching'
     st['previous_harness_error']=error
     st['technical_errors']=0
@@ -360,7 +360,7 @@ async def attempt(row,st,eng,worker):
   # for checkpointed work, search only the actual remaining qualification.
   remaining=max(0.,BASELINE_SECONDS-float(st.get('total_emulated_seconds',0)))
   if remaining>0:
-   seconds=round(remaining,4)
+   seconds=max(0.1,round(remaining,4))
   else:
    seconds=min(3600,max(30,int(st['next_slice_seconds'])))
   ACTIVE[worker]={'id':ident,'puzzle_rating':row['rating'],'slice_seconds':seconds,
