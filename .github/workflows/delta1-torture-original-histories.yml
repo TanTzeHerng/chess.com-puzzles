@@ -1,0 +1,28 @@
+name: Delta-1 Puzzle Torture original-game histories
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  histories:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/delta1-puzzle-torture-20261028
+      - run: python3 -m pip install --quiet chess ijson
+      - name: Retrieve original dataset and verified puzzle manifest
+        run: |
+          mkdir -p /tmp/torture-source
+          gh release download delta1-full-state-20261027T090152Z --pattern sources-full.json.gz --dir /tmp/torture-source --clobber
+          curl -fL --retry 4 --retry-delay 5 --connect-timeout 20 --max-time 3600 -o /tmp/torture-source/puzzles-json.zip https://github.com/IchNukeDichWeg/chess.com-puzzles/releases/download/v2/puzzles-json.zip
+          ls -lh /tmp/torture-source
+      - name: Match original PGNs to all 19492 puzzle FENs
+        run: python3 -u delta1_torture/extract_original_histories.py
+      - name: Publish separately archived original game moves
+        run: |
+          gh release upload delta1-puzzle-torture-20261028 /tmp/torture-source/original-game-histories.json.gz --clobber
+          gh release view delta1-puzzle-torture-20261028 --json assets --jq '[.assets[] | select(.name=="original-game-histories.json.gz") | {name:.name,size:.size}]'
