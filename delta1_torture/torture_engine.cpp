@@ -52,10 +52,14 @@ void setup(const std::string&fen){
 }
 
 void watch_move(const std::string& target){
- if(target.size()!=4)throw std::runtime_error("watch requires 4-char move");
+ if(target.size()!=4 && target.size()!=5)throw std::runtime_error("watch requires 4- or 5-char UCI move");
+ // The genuine ROM promotes its own pawn to queen. Coordinates alone are
+ // not evidence of underpromotion, so never award a false underpromotion win.
+ // Underpromotion positions still receive genuine search and 99s exposure.
+ bool verifiable=(target.size()==4 || target[4]=='q');
  for(int k=0;k<4;k++)m.flash_target[k]=target[k];
  m.flash_target[4]=0;
- m.flash_armed=true;m.flash_seen=false;m.flash_cycle=m.cycles+100000;
+ m.flash_armed=verifiable;m.flash_seen=false;m.flash_cycle=m.cycles;
  std::cout<<"watching "<<target<<" board_hex="<<boardhex()<<"\n"<<std::flush;
 }
 void advance_search(double emulated_seconds){
@@ -131,8 +135,13 @@ int main(int argc,char**argv){
     else if(line.rfind("play ",0)==0){
      std::string u=line.substr(5);
      if(u.size()!=4)throw std::runtime_error("Four-character moves only");
-     m.move(u);candidate_ready=false;m.flash_armed=false;m.flash_seen=false;search_start=m.cycles;
-     std::cout<<"played "<<u<<" board_hex="<<boardhex()<<"\n"<<std::flush;
+     // Preserve the watch armed before entering the final human move.
+     // The ROM may display its correct reply during the ENTER keypress.
+     m.move(u);candidate_ready=false;search_start=m.cycles;
+     std::cout<<"played "<<u<<" board_hex="<<boardhex()
+       <<" input_accepted="<<((m.regs[6]&0x50)==0x50?0:1)
+       <<" flash_seen="<<(m.flash_seen?1:0)
+       <<" flags="<<int(m.regs[6])<<"\n"<<std::flush;
     }
     else if(line.rfind("watch ",0)==0)watch_move(line.substr(6));
     else if(line.rfind("advance ",0)==0)advance_search(std::stod(line.substr(8)));
