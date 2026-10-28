@@ -112,6 +112,15 @@ def recover_exhausted_technical():
    st['error']='Recovered time-accounting tolerance; retained exact F8 checkpoint'
    st['updated_at']=utc()
    atom(statefile(st['id']),st);recovered+=1
+  elif 'ROM side-to-move setup mismatch' in err:
+   # Bad harness validation fired before any search; preserve all existing
+   # puzzle history, but restore eligibility without penalizing the ROM.
+   st['status']='searching'
+   st['technical_errors']=0
+   st['previous_harness_error']=err
+   st['error']=None
+   st['updated_at']=utc()
+   atom(statefile(st['id']),st);recovered+=1
   elif 'Unsafe rights in resumed solver position' in err:
    st['status']='blocked'
    st['error']='Awaiting original-game history to reconstruct FEN rights'
@@ -235,7 +244,9 @@ async def attempt(row,st,eng,worker):
    setup_info=parse_info(ready)
    if setup_info.get('board_hex')!=bh(before):
     raise RuntimeError('ROM keypad setup failed independent 64-square verification')
-   expected_color='white' if before.turn==chess.WHITE else 'black'
+   # 'before.turn' is the HUMAN/opponent entering the setup move;
+   # the ROM-controlled computer plays the opposite color.
+   expected_color='black' if before.turn==chess.WHITE else 'white'
    if setup_info.get('computer_color')!=expected_color:
     raise RuntimeError('ROM side-to-move setup mismatch')
    await command(eng,'play '+last,'played ',45)
